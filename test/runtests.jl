@@ -2,5 +2,5 @@ using SpinWeightedSpheroidalHarmonics
 using Test
 
 @testset "SpinWeightedSpheroidalHarmonics.jl" begin
-    # Write your tests here.
+    # Nothing here for now
 end
