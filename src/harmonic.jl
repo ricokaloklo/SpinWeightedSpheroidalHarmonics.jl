@@ -51,7 +51,7 @@ function _swsh_prefactor(s::Int, l::Int, m::Int)
         This is consistent with the expression in wikipedia,
         as well as BHPerturbationToolkit
     =#
-    (-1)^m * sqrt((factorial(l+m)*factorial(l-m)*(2*l+1))/(4*pi*factorial(l+s)*factorial(l-s)))
+    (-1)^m * sqrt(Complex((factorial(l+m)*factorial(l-m)*(2*l+1))/(4*pi*factorial(l+s)*factorial(l-s))))
 end
 
 function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int, theta, phi)
