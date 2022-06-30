@@ -91,7 +91,14 @@ function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=25)
     # Solve the eigenvalue problem
     eigenvectors = eigvecs(spectral_matrix)
     # The returned eigenvectors are already normalized
-    eigenvectors[:,indexin(l, all_l_in_matrix)]
+    v = eigenvectors[:,indexin(l, all_l_in_matrix)]
+    # Note that the eigenvectors are determined only up to a multiplicative factor
+    # Check whether when l' = l, the coefficient is real and positive
+    if real(v[indexin(l, all_l_in_matrix)][1]) > 0
+        return v
+    else
+        return -v
+    end
 end
 
 function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=25)
