@@ -74,7 +74,7 @@ function construct_spectral_matrix(c, s::Int, m::Int, N::Int)
     spectral_matrix = Array(Symmetric(spectral_matrix))
 end
 
-function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=25)
+function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=10)
     all_l_in_matrix = construct_all_l_in_matrix(s, m, N)
     spectral_matrix = construct_spectral_matrix(c, s, m, N)
 
@@ -84,7 +84,7 @@ function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=25)
     eigenvalues[indexin(l, all_l_in_matrix)][1]
 end
 
-function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=25)
+function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=10)
     all_l_in_matrix = construct_all_l_in_matrix(s, m, N)
     spectral_matrix = construct_spectral_matrix(c, s, m, N)
 
@@ -101,6 +101,6 @@ function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=25)
     end
 end
 
-function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=25)
+function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=10)
     angular_sep_const(c, s, l, m, N) + c^2 - 2*m*c
 end
