@@ -35,15 +35,13 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi
     end
 
     # compute the spin-weighted spherical harmonics needed
-    spherical_harmonics = []
+    output = 0.0
     spherical_harmonics_l = construct_all_l_in_matrix(s, m, N)
 
-    for spherical_harmonic_l in spherical_harmonics_l
-        push!(spherical_harmonics, _nth_derivative_spherical_harmonic(s, spherical_harmonic_l, m, derivative, theta, phi))
+    for (idx, spherical_harmonic_l) in enumerate(spherical_harmonics_l)
+        output += coefficients[idx] * _nth_derivative_spherical_harmonic(s, spherical_harmonic_l, m, derivative, theta, phi)
     end
-
-    # perform a dot product of the two vectors
-    dot(coefficients, spherical_harmonics)
+    output
 end
 
 end
