@@ -26,7 +26,7 @@ _cached_coefficients = SpectralDecompositionCoefficients(_cached_coefficients_pa
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi, derivative::Int=0, N::Int=10)
     local coefficients
 
-    # perform spectral decomposition if inputs differ from cached params
+    # Perform spectral decomposition if inputs differ from cached params
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     if coefficients_params == _cached_coefficients_params
         coefficients = _cached_coefficients
@@ -34,7 +34,7 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi
         coefficients = SpectralDecompositionCoefficients(coefficients_params)
     end
 
-    # compute the spin-weighted spherical harmonics needed
+    # Compute the spin-weighted spherical harmonics needed
     output = 0.0
     spherical_harmonics_l = construct_all_l_in_matrix(s, m, N)
 
