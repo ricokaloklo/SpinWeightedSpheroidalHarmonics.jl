@@ -12,7 +12,7 @@ function _summation_term_prefactor(s::Int, l::Int, m::Int, r::Int)
     binomial(l-s, r)*binomial(l+s, r+s-m)*(-1)^(l-r-s)
 end
 
-function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, n::Int, theta, phi)
+function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
     ct2 = cos(theta/2)
     st2 = sin(theta/2)
 
@@ -21,7 +21,7 @@ function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, n::Int, thet
         _rsum = 0.0
         root = BinaryNode(ct2_st2(1, 2*r+s-m, 2*l-2*r-s+m)) # root of the tree
         # building the binary tree
-        for j in 1:n
+        for j in 1:theta_derivative
             #=
                 Each derivative wrt theta will add two terms
                 one with
@@ -43,7 +43,7 @@ function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, n::Int, thet
         _rsum *= _summation_term_prefactor(s, l, m, r)
         _sum += _rsum
     end
-    _swsh_prefactor(s, l, m) * _sum * cis(m*phi)
+    _swsh_prefactor(s, l, m) * _sum * cis(m*phi) * (m*1im)^phi_derivative
 end
 
 function _swsh_prefactor(s::Int, l::Int, m::Int)
@@ -55,5 +55,5 @@ function _swsh_prefactor(s::Int, l::Int, m::Int)
 end
 
 function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int, theta, phi)
-    _nth_derivative_spherical_harmonic(s, l, m, 0, theta, phi)
+    _nth_derivative_spherical_harmonic(s, l, m, 0, 0, theta, phi)
 end
