@@ -81,7 +81,7 @@ function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=10)
     # Solve the eigenvalue problem
     eigenvalues = eigvals(spectral_matrix)
     # The returned eigenvalues are already sorted in ascending order
-    eigenvalues[indexin(l, all_l_in_matrix)][1]
+    eigenvalues[indexin(l, all_l_in_matrix)[1]]
 end
 
 function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=10)
@@ -91,14 +91,12 @@ function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=10)
     # Solve the eigenvalue problem
     eigenvectors = eigvecs(spectral_matrix)
     # The returned eigenvectors are already normalized
-    v = eigenvectors[:,indexin(l, all_l_in_matrix)]
+    v = eigenvectors[:,indexin(l, all_l_in_matrix)[1]]
     # Note that the eigenvectors are determined only up to a multiplicative factor
-    # Check whether when l' = l, the coefficient is real and positive
-    if real(v[indexin(l, all_l_in_matrix)][1]) > 0
-        return v
-    else
-        return -v
-    end
+    # Make sure that when l'=l, it is a positive real number
+    v /= v[indexin(l, all_l_in_matrix)[1]]
+    # Re-normalize the vector
+    return v/sqrt(dot(v,v))
 end
 
 function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=10)
