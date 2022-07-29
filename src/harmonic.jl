@@ -51,7 +51,7 @@ function _swsh_prefactor(s::Int, l::Int, m::Int)
         This is consistent with the expression in wikipedia,
         as well as BHPerturbationToolkit
     =#
-    #(-1)^m * sqrt(Complex((factorial(big(l+m))*factorial(big(l-m))*(2*l+1))/(4*pi*factorial(big(l+s))*factorial(big(l-s)))))
+
     # Implement explicit expression here
     common_factor = (-1)^m * sqrt((2*l+1)/(4*pi))
     if abs(s) == abs(m)
