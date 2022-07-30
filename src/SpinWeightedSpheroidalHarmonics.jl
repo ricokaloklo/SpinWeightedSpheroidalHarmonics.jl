@@ -37,6 +37,8 @@ function _compute_normalization_constant(coefficients_params, coefficients)
     Numerically compute the integral
 
     \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
+
+    where nf is the normalization constant needed
     =#
     
     integrand(theta) = 2*pi * _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, coefficients, theta, 0.0, 0, 0)^2 * sin(theta)
