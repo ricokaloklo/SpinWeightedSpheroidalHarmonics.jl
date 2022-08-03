@@ -3,10 +3,10 @@ module SpinWeightedSpheroidalHarmonics
 using LinearAlgebra
 using QuadGK
 
-export spin_weighted_spheroidal_harmonic
-
 include("harmonic.jl")
 include("spectral.jl")
+
+export spin_weighted_spheroidal_harmonic, Teukolsky_lambda_const
 
 struct SpectralDecompositionInputParams
     s::Int
