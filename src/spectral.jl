@@ -1,7 +1,8 @@
 using LinearAlgebra
 
 function Fslm(s::Int, l::Int, m::Int)
-    sqrt( ( (l+1)^2 - m^2 )/( (2*l+3)*(2*l+1) ) ) * sqrt( ( (l+1)^2 - s^2 )/( (l+1)^2 ) )
+    # 'Edge' case where l is -1, this can happen both |m| and |s| are 0 (since lmin = max(|m|, |s|))
+    (l == -1 && abs(m) == 0 && abs(s) == 0) ? 0 : sqrt( ( (l+1)^2 - m^2 )/( (2*l+3)*(2*l+1) ) ) * sqrt( ( (l+1)^2 - s^2 )/( (l+1)^2 ) )
 end
 
 function Gslm(s::Int, l::Int, m::Int)
