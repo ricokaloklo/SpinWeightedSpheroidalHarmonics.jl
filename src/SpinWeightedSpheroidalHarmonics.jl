@@ -61,6 +61,7 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi
     if coefficients_params != _cached_coefficients_params
         _cached_coefficients_params = coefficients_params
         _cached_coefficients = SpectralDecompositionCoefficients(_cached_coefficients_params)
+        # Note that if everything is consistent, this should return 1.0 (so we are not really re-normalizing the harmonic)
         _cached_normalization = _compute_normalization_constant(_cached_coefficients_params, _cached_coefficients)
     end
 
