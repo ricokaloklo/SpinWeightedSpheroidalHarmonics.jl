@@ -67,4 +67,12 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi
     unnormalized_harmonic/_cached_normalization
 end
 
+function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0, N::Int=10)
+    spin_weighted_spheroidal_harmonic(s, l, m, 0, theta, phi; theta_derivative=theta_derivative, phi_derivative=phi_derivative, N=N)
+end
+
+function spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=10)
+    Teukolsky_lambda_const(c, s, l, m, N)
+end
+
 end
