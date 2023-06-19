@@ -6,7 +6,8 @@ using QuadGK
 include("harmonic.jl")
 include("spectral.jl")
 
-export spin_weighted_spheroidal_harmonic, Teukolsky_lambda_const
+export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue
+export Teukolsky_lambda_const # For backward compatbility
 
 struct SpectralDecompositionInputParams
     s::Int
