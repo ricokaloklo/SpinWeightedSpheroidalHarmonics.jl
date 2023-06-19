@@ -56,7 +56,9 @@ _cached_normalization = _compute_normalization_constant(_cached_coefficients_par
 
 Compute the spin-weighted spheroidal harmonic with spin weight `s`, harmonic index `l`, azimuthal index `m`,
 spheroidicity `c` ($c = a\omega$), and coordinates `theta` and `phi`.
+
 The optional arguments `theta_derivative` and `phi_derivative` specify the order of partial derivatives to take with respect to `theta` and `phi`, respectively.
+
 The optional argument `N` specifies the number of terms to use in the spectral decomposition. The default value is `N=10`.
 """
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0, N::Int=10)
@@ -82,6 +84,7 @@ end
 
 Compute the eigenvalue of the spin-weighted spheroidal harmonics
 with spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$).
+
 The optional argument `N` specifies the number of terms to use in the spectral decomposition. The default value is `N=10`.
 
 This function is simply a wrapper to `Teukolsky_lambda_const` for backward compatbility.
