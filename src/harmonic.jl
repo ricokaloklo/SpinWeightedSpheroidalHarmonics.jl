@@ -81,6 +81,12 @@ function _swsh_prefactor(s::Int, l::Int, m::Int)
     # should throw an error here because the function should have exited before this
 end
 
-function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int, theta, phi)
-    _nth_derivative_spherical_harmonic(s, l, m, 0, 0, theta, phi)
+@doc raw"""
+    spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
+
+Compute the spin-weighted spherical harmonic with spin weight `s`, harmonic index `l`, azimuthal index `m`, and coordinates `theta` and `phi`.
+The optional arguments `theta_derivative` and `phi_derivative` specify the order of partial derivatives to take with respect to `theta` and `phi`, respectively.
+"""
+function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
+    _nth_derivative_spherical_harmonic(s, l, m, theta_derivative, phi_derivative, theta, phi)
 end
