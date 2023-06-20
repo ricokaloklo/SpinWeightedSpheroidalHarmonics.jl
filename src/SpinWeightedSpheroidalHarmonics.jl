@@ -6,7 +6,7 @@ using QuadGK
 include("harmonic.jl")
 include("spectral.jl")
 
-export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue # Expose these functions to the user
+export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue, spin_weighted_spherical_eigenvalue # Expose these functions to the user
 export Teukolsky_lambda_const # For backward compatbility
 
 struct SpectralDecompositionInputParams
@@ -82,7 +82,7 @@ end
 @doc raw"""
     spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=10)
 
-Compute the eigenvalue of the spin-weighted spheroidal harmonics
+Compute the eigenvalue of the spin-weighted spheroidal harmonic
 with spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$).
 
 The optional argument `N` specifies the number of terms to use in the spectral decomposition. The default value is `N=10`.
@@ -91,6 +91,19 @@ This function is simply a wrapper to `Teukolsky_lambda_const` for backward compa
 """
 function spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=10)
     Teukolsky_lambda_const(c, s, l, m, N)
+end
+
+@doc raw"""
+    spin_weighted_spherical_eigenvalue(s::Int, l::Int, m::Int=0)
+
+Compute the eigenvalue of the spin-weighted spherical harmonic
+with spin weight `s`, harmonic index `l`, and azimuthal index `m`
+(but the eigenvalue is independent of `m`).
+
+"""
+function spin_weighted_spherical_eigenvalue(s::Int, l::Int, m::Int=0)
+    # Eigenvalue for the Schwarzschild case does not depend on m
+    Teukolsky_lambda_const(0, s, l, m)
 end
 
 end
