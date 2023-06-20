@@ -76,6 +76,11 @@ function construct_spectral_matrix(c, s::Int, m::Int, N::Int)
 end
 
 function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=10)
+    if c == 0
+        # Return the Schwarzschild eigenvalue explicitly
+        return l*(l+1) - s*(s+1)
+    end
+
     all_l_in_matrix = construct_all_l_in_matrix(s, m, N)
     spectral_matrix = construct_spectral_matrix(c, s, m, N)
 
