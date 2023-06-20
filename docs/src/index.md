@@ -2,6 +2,18 @@
 
 **SpinWeightedSpheroidalHarmonics.jl** computes spin-weighted spheroidal harmonics and eigenvalues using a spectral decomposition method.
 
+The two main features are implemented as
+- `spin_weighted_spheroidal_harmonic` for computing the harmonic, and
+- `spin_weighted_spheroidal_eigenvalue` for computing the eigenvalue
+and both supporting complex spheroidicity (and hence frequency $\omega$). See [Quick-start](@ref) below for some simple examples.
+
+Additionally, we provide two similar functions
+- `spin_weighted_spherical_harmonic`, and
+- `spin_weighted_spherical_eigenvalue`
+that return the exact harmonic and eigenvalue respectively.
+
+Exact partial derivatives (with respect to either `theta` and/or `phi`) can be evaluated by specifying the derivative order with `theta_derivative` and `phi_derivative` respectively when calling the functions for a harmoic.
+
 ## Installation
 To install the package using the Julia package manager, simply type the following in the Julia REPL:
 ```julia
