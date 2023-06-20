@@ -3,16 +3,25 @@
 **SpinWeightedSpheroidalHarmonics.jl** computes spin-weighted spheroidal harmonics and eigenvalues using a spectral decomposition method.
 
 The two main features are implemented as
-- `spin_weighted_spheroidal_harmonic` for computing the harmonic, and
+- `spin_weighted_spheroidal_harmonic` for computing the harmonic ${}_{s} S_{\ell m}(\theta, \phi; c \equiv a \omega)$, and
 - `spin_weighted_spheroidal_eigenvalue` for computing the eigenvalue
-and both supporting complex spheroidicity (and hence frequency $\omega$). See [Quick-start](@ref) below for some simple examples.
+and both supporting complex spheroidicity $c$ (and hence frequency $\omega$). See [Quick-start](@ref) below for some simple examples.
+
+In particular, we use the following normalization convention:
+```math
+    \int_0^{\pi} \left[ _{s} S_{\ell m}(\theta; c) \right]^{2} \sin(\theta) \, d\theta = \frac{1}{2\pi} \; ,
+```
+identical to the convention used in the Mathematica package [SpinWeightedSpheroidalHarmonics](https://bhptoolkit.org/SpinWeightedSpheroidalHarmonics/) from the Black Hole Perturbation Toolkit.
 
 Additionally, we provide two similar functions
-- `spin_weighted_spherical_harmonic`, and
+- `spin_weighted_spherical_harmonic` ${}_{s} Y_{\ell m}(\theta, \phi)$, and
 - `spin_weighted_spherical_eigenvalue`
 that return the exact harmonic and eigenvalue respectively.
 
-Exact partial derivatives (with respect to either `theta` and/or `phi`) can be evaluated by specifying the derivative order with `theta_derivative` and `phi_derivative` respectively when calling the functions for a harmoic.
+Exact partial derivatives (with respect to either $\theta$ and/or $\phi$) can be evaluated by specifying the derivative order with `theta_derivative` and `phi_derivative` respectively when calling the functions for a harmonic.
+
+Internally, there is a caching mechanism that stores the most recent spectral decomposition coefficients such that
+when evaluating a harmonic with different values of $\theta$ or $\phi$, no new decomposition will be performed.
 
 ## Installation
 To install the package using the Julia package manager, simply type the following in the Julia REPL:
