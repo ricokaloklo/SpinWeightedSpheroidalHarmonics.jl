@@ -70,7 +70,11 @@ end
 @doc raw"""
     spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=10)
 
-Compute the spin-weighted spheroidal harmonic.
+Construct the spectral decomposition of this spin-weighted spheroidal harmonic of 
+spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$) 
+using `N` spin-weighted *spherical* harmonics.
+
+Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at any point.
 """
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=10)
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
@@ -83,14 +87,34 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=10)
 end
 
 # The power of multiple dispatch
+@doc raw"""
+    SpinWeightedSpheroidalHarmonicFunction(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
+
+Compute the value of the spin-weighted spheroidal harmonic at the point `(theta, phi)`. 
+Additionally compute the `theta_derivative`-th derivative with respect to `theta` and the `phi_derivative`-th derivative with respect to `phi` exactly.
+"""
 (swsh_func::SpinWeightedSpheroidalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0) = begin
     _unnormalized_spin_weighted_spheroidal_harmonic(swsh_func.params, swsh_func.coeffs, theta, phi; theta_derivative=theta_derivative, phi_derivative=phi_derivative) / swsh_func.normalization_const
 end
 
+@doc raw"""
+    spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int)
+
+Construct the spin-weighted spherical harmonic of 
+spin weight `s`, harmonic index `l`, and azimuthal index `m`.
+
+Return a SpinWeightedSphericalHarmonicFunction object that can be evaluated at any point.
+"""
 function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int)
     return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m))
 end
 
+@doc raw"""
+    SpinWeightedSphericalHarmonicFunction(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
+
+Compute the exact value of the spin-weighted spherical harmonic at the point `(theta, phi)`.
+Additionally compute the `theta_derivative`-th derivative with respect to `theta` and the `phi_derivative`-th derivative with respect to `phi` exactly.
+"""
 (swsh_func::SpinWeightedSphericalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0) = begin
     _nth_derivative_spherical_harmonic(swsh_func.s, swsh_func.l, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
 end

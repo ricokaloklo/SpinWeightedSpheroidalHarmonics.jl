@@ -45,7 +45,9 @@ For example, to compute the spin-weighted spheroidal harmonic for the mode $s = 
 using SpinWeightedSpheroidalHarmonics
 s=-2; l=2; m=2; a=0.7; omega=0.5;
 theta=π/6; phi=π/3;
-spin_weighted_spheroidal_harmonic(s, l, m, a*omega, theta, phi)
+# Construct the SpinWeightedSpheroidalHarmonicFunction
+swsh = spin_weighted_spheroidal_harmonic(s, l, m, a*omega)
+swsh(theta, phi)
 ```
 
 ## License
