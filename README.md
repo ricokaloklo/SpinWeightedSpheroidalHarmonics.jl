@@ -6,6 +6,8 @@
 
 SpinWeightedSpheroidalHarmonics.jl computes spin-weighted spheroidal harmonics and eigenvalues using a spectral decomposition method.
 
+Note that v0.5.0 is a *breaking* release.
+
 ## Installation
 To install the package using the Julia package manager, simply type the following in the Julia REPL:
 ```julia
@@ -16,7 +18,7 @@ Pkg.add("SpinWeightedSpheroidalHarmonics")
 ## Quick-start
 ### Computing the spin-weighted spheroidal eigenvalue
 For example, to compute the spin-weighted spheroidal eigenvalue $\lambda$ for the mode $s = -2, \ell = 2, m = 2, a = 0.7, \omega = 0.5$, simply do
-```julia
+```
 using SpinWeightedSpheroidalHarmonics
 s=-2; l=2; m=2; a=0.7; omega=0.5;
 spin_weighted_spheroidal_eigenvalue(s, l, m, a*omega)
@@ -24,11 +26,13 @@ spin_weighted_spheroidal_eigenvalue(s, l, m, a*omega)
 
 ### Computing the spin-weighted spheroidal harmonic
 For example, to compute the spin-weighted spheroidal harmonic for the mode $s = -2, \ell = 2, m = 2, a = 0.7, \omega = 0.5$ at $\theta = \pi/6, \phi = \pi/3$, simply do
-```julia
+```
 using SpinWeightedSpheroidalHarmonics
 s=-2; l=2; m=2; a=0.7; omega=0.5;
 theta=π/6; phi=π/3;
-spin_weighted_spheroidal_harmonic(s, l, m, a*omega, theta, phi)
+# Construct the SpinWeightedSpheroidalHarmonicFunction
+swsh = spin_weighted_spheroidal_harmonic(s, l, m, a*omega)
+swsh(theta, phi)
 ```
 
 ## License
