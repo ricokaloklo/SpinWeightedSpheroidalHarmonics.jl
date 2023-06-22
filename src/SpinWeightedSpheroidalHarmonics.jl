@@ -17,9 +17,29 @@ struct SpectralDecompositionInputParams
     N::Int
 end
 
-struct SpectralDecompositionCoefficients
-    input::SpectralDecompositionInputParams
-    SpectralDecompositionCoefficients(input) = spectral_coefficients(input.c, input.s, input.l, input.m, input.N)
+struct SpinWeightedSpheroidalHarmonicFunction
+    params::SpectralDecompositionInputParams
+    coeffs
+    normalization_const
+    lambda
+end
+
+# Implement pretty printing for SpinWeightedSpheroidalHarmonicFunction
+function Base.show(io::IO, ::MIME"text/plain", swsh_func::SpinWeightedSpheroidalHarmonicFunction)
+    print(io, "SpinWeightedSpheroidalHarmonicFunction(s = $(swsh_func.params.s), l = $(swsh_func.params.l), m = $(swsh_func.params.m), c = $(swsh_func.params.c), lambda = $(swsh_func.lambda))")
+end
+
+# Not really necessary but this is to maintain uniformity
+struct SpinWeightedSphericalHarmonicFunction
+    s::Int
+    l::Int
+    m::Int
+    lambda
+end
+
+# Implement pretty printing for SpinWeightedSphericalHarmonicFunction
+function Base.show(io::IO, ::MIME"text/plain", swsh_func::SpinWeightedSphericalHarmonicFunction)
+    print(io, "SpinWeightedSphericalHarmonicFunction(s = $(swsh_func.s), l = $(swsh_func.l), m = $(swsh_func.m), lambda = $(swsh_func.lambda))")
 end
 
 function _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, coefficients, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
@@ -47,36 +67,32 @@ function _compute_normalization_constant(coefficients_params, coefficients)
     return sqrt(norm_sq)
 end
 
-_cached_coefficients_params = SpectralDecompositionInputParams(-2, 2, 2, 0.5+0.1im, 10)
-_cached_coefficients = SpectralDecompositionCoefficients(_cached_coefficients_params)
-_cached_normalization = _compute_normalization_constant(_cached_coefficients_params, _cached_coefficients)
-
 @doc raw"""
-    spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0, N::Int=10)
+    spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=10)
 
-Compute the spin-weighted spheroidal harmonic with spin weight `s`, harmonic index `l`, azimuthal index `m`,
-spheroidicity `c` ($c = a\omega$), and coordinates `theta` and `phi`.
-
-The optional arguments `theta_derivative` and `phi_derivative` specify the order of partial derivatives to take with respect to `theta` and `phi`, respectively.
-
-The optional argument `N` specifies the number of terms to use in the spectral decomposition. The default value is `N=10`.
+Compute the spin-weighted spheroidal harmonic.
 """
-function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0, N::Int=10)
-    global _cached_coefficients_params
-    global _cached_coefficients
-    global _cached_normalization
-
+function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=10)
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
-    # Perform spectral decomposition and normalization if inputs differ from cached params
-    if coefficients_params != _cached_coefficients_params
-        _cached_coefficients_params = coefficients_params
-        _cached_coefficients = SpectralDecompositionCoefficients(_cached_coefficients_params)
-        # Note that if everything is consistent, this should return 1.0 (so we are not really re-normalizing the harmonic)
-        _cached_normalization = _compute_normalization_constant(_cached_coefficients_params, _cached_coefficients)
-    end
+    coefficients = spectral_coefficients(c, s, l, m, N)
+    # Note that if everything is consistent, this should return 1.0 (so we are not really re-normalizing the harmonic)
+    normalization = _compute_normalization_constant(coefficients_params, coefficients)
+    lambda = spin_weighted_spheroidal_eigenvalue(s, l, m, c, N=N) # Not the most efficient way to do this, but it works
 
-    unnormalized_harmonic = _unnormalized_spin_weighted_spheroidal_harmonic(_cached_coefficients_params, _cached_coefficients, theta, phi; theta_derivative=theta_derivative, phi_derivative=phi_derivative)
-    unnormalized_harmonic/_cached_normalization
+    return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, normalization, lambda)
+end
+
+# The power of multiple dispatch
+(swsh_func::SpinWeightedSpheroidalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0) = begin
+    _unnormalized_spin_weighted_spheroidal_harmonic(swsh_func.params, swsh_func.coeffs, theta, phi; theta_derivative=theta_derivative, phi_derivative=phi_derivative) / swsh_func.normalization_const
+end
+
+function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int)
+    return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m))
+end
+
+(swsh_func::SpinWeightedSphericalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0) = begin
+    _nth_derivative_spherical_harmonic(swsh_func.s, swsh_func.l, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
 end
 
 @doc raw"""
