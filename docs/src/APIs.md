@@ -59,7 +59,7 @@ This is a composite struct type that stores the output from [`spin_weighted_sphe
 
 | field |   |
 | :--- | :--- |
-| `params` | a [SpectralDecompositionInputParams]@ref object storing the input parameters for the spectral decomposition |
+| `params` | a [SpectralDecompositionInputParams](@ref) object storing the input parameters for the spectral decomposition |
 | `coeffs` | spectral decomposition coefficients |
 | `normalization_const` | normalization constant to be *divided* to ensure the normalization convention is satisfied |
 | `lambda` | spin-weighted spheroidal eigenvalue $\lambda$ |
