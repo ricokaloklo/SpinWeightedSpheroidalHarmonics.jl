@@ -35,5 +35,19 @@ swsh = spin_weighted_spheroidal_harmonic(s, l, m, a*omega)
 swsh(theta, phi)
 ```
 
+## How to cite
+If you have used this code in your research that leads to a publication, please cite the following article:
+```
+@article{Lo:2023fvv,
+    author = "Lo, Rico K. L.",
+    title = "{Recipes for computing radiation from a Kerr black hole using Generalized Sasaki-Nakamura formalism: I. Homogeneous solutions}",
+    eprint = "2306.16469",
+    archivePrefix = "arXiv",
+    primaryClass = "gr-qc",
+    month = "6",
+    year = "2023"
+}
+```
+
 ## License
 The package is licensed under the MIT License.
