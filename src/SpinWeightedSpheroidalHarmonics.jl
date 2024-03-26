@@ -53,6 +53,17 @@ function _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, co
     output
 end
 
+function _determine_matrix_size_N(s::Int, l::Int, m::Int)
+    #=
+    Determine a suitable value of N for the spectral decomposition
+
+    The value of N calculated here is essentially lmax for
+    the spectral decomposition. Then we apply a 'buffer' of 10
+    =#
+    N = l - max(abs(m), abs(s)) + 1
+    return N + 10
+end
+
 function _compute_normalization_constant(coefficients_params, coefficients)
     #=
     Numerically compute the integral
@@ -68,15 +79,21 @@ function _compute_normalization_constant(coefficients_params, coefficients)
 end
 
 @doc raw"""
-    spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=10)
+    spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1)
 
 Construct the spectral decomposition of this spin-weighted spheroidal harmonic of 
 spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$) 
 using `N` spin-weighted *spherical* harmonics.
 
+Note that the default value for `N=-1` indicates that a suitable value of `N`
+will be determined automatically.
+
 Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at any point.
 """
-function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=10)
+function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1)
+    if N == -1
+        N = _determine_matrix_size_N(s, l, m)
+    end
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     coefficients = spectral_coefficients(c, s, l, m, N)
     # Note that if everything is consistent, this should return 1.0 (so we are not really re-normalizing the harmonic)
@@ -120,16 +137,20 @@ Additionally compute the `theta_derivative`-th derivative with respect to `theta
 end
 
 @doc raw"""
-    spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=10)
+    spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=-1)
 
 Compute the eigenvalue of the spin-weighted spheroidal harmonic
 with spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$).
 
-The optional argument `N` specifies the number of terms to use in the spectral decomposition. The default value is `N=10`.
+The optional argument `N` specifies the number of terms to use in the spectral decomposition.
+The default value is `N=-1`, which indicates that a suitable value of `N` will be determined automatically.
 
 This function is simply a wrapper to `Teukolsky_lambda_const` for backward compatbility.
 """
-function spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=10)
+function spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=-1)
+    if N == -1
+        N = _determine_matrix_size_N(s, l, m)
+    end
     Teukolsky_lambda_const(c, s, l, m, N)
 end
 
