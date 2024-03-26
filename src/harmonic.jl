@@ -8,8 +8,20 @@ struct ct2_st2
     st2_power::Int
 end
 
+function _binomial(n, k)
+    try
+        return binomial(n, k)
+    catch e
+        if e isa OverflowError
+            return binomial(BigInt(n), BigInt(k))
+        else
+            rethrow(e)
+        end
+    end
+end
+
 function _summation_term_prefactor(s::Int, l::Int, m::Int, r::Int)
-    binomial(l-s, r)*binomial(l+s, r+s-m)*(-1)^(l-r-s)
+    _binomial(l-s, r)*_binomial(l+s, r+s-m)*(-1)^(l-r-s)
 end
 
 function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
