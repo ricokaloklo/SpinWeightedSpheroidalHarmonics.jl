@@ -69,26 +69,21 @@ function _swsh_prefactor(s::Int, l::Int, m::Int)
     if abs(s) == abs(m)
         return common_factor
     elseif s > m
-        diff = s - m # which is a positive integer
+        delta = s - m # which is a positive integer
         out = 1
-        for i in 0:1:diff-1
-            out *= (l-m-i)
-        end
-        for j in diff:-1:1
-            out /= (l+m+j)
+        for i in 0:1:delta-1
+            j = delta - i
+            out *= ((l-m-i)/(l+m+j))
         end
         return common_factor * sqrt(out)
     else
         # in this case s < m
-        diff = m - s # which is a positive integer
+        delta = m - s # which is a positive integer
         out = 1
-        for i in diff:-1:1
-            out *= (l+s+i)
-        end
-        for j in 0:1:diff-1
-            out /= (l-s-j)
+        for i in 0:1:delta-1
+            j = delta - i
+            out *= ((l+s+j)/(l-s-i))
         end
         return common_factor * sqrt(out)
     end
-    # should throw an error here because the function should have exited before this
 end
