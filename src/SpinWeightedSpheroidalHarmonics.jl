@@ -96,7 +96,7 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1)
     end
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     coefficients = spectral_coefficients(c, s, l, m, N)
-    normalization = 1 # Note that if everything is consistent, this should really be just 1
+    normalization = _compute_normalization_constant(coefficients_params, coefficients)
     lambda = spin_weighted_spheroidal_eigenvalue(s, l, m, c, N=N) # Not the most efficient way to do this, but it works
 
     return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, normalization, lambda)
