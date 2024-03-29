@@ -1,7 +1,6 @@
 module SpinWeightedSpheroidalHarmonics
 
 using LinearAlgebra
-using QuadGK
 
 include("harmonic.jl")
 include("spectral.jl")
@@ -64,20 +63,6 @@ function _determine_matrix_size_N(s::Int, l::Int, m::Int)
     return N + 10
 end
 
-function _compute_normalization_constant(coefficients_params, coefficients)
-    #=
-    Numerically compute the integral
-
-    \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
-
-    where nf is the normalization constant needed
-    =#
-    
-    integrand(theta) = 2*pi * _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, coefficients, theta, 0.0)^2 * sin(theta)
-    norm_sq = quadgk(theta -> integrand(theta), 0, pi)[1]
-    return sqrt(norm_sq)
-end
-
 @doc raw"""
     spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1)
 
@@ -96,7 +81,7 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1)
     end
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     coefficients = spectral_coefficients(c, s, l, m, N)
-    normalization = _compute_normalization_constant(coefficients_params, coefficients)
+    normalization = 1 # already satisfied the normalization cond. \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
     lambda = spin_weighted_spheroidal_eigenvalue(s, l, m, c, N=N) # Not the most efficient way to do this, but it works
 
     return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, normalization, lambda)
