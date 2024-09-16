@@ -9,7 +9,7 @@ SpinWeightedSpheroidalHarmonics.jl computes spin-weighted spheroidal harmonics a
 The two main features are implemented as
 - `spin_weighted_spheroidal_harmonic` for computing the harmonic $`\,{}_{s} S_{\ell m}(\theta, \phi; c \equiv a \omega)`$, and
 - `spin_weighted_spheroidal_eigenvalue` for computing the eigenvalue
-and both supporting complex spheroidicity $c$ (and hence complex frequency $\omega$). See [Quick-start](@ref) below for some simple examples.
+and both supporting complex spheroidicity $c$ (and hence complex frequency $\omega$). See Quick-start below for some simple examples.
 
 In particular, we use the following normalization convention:
 ```math
