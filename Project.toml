@@ -1,7 +1,7 @@
 name = "SpinWeightedSpheroidalHarmonics"
 uuid = "680e17a6-2a17-48fd-ae01-e2b5a643bef0"
 authors = ["Rico Ka Lok Lo"]
-version = "0.5.2"
+version = "0.5.3"
 
 [deps]
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
