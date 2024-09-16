@@ -5,7 +5,7 @@
 The two main features are implemented as
 - `spin_weighted_spheroidal_harmonic` for computing the harmonic ${}_{s} S_{\ell m}(\theta, \phi; c \equiv a \omega)$, and
 - `spin_weighted_spheroidal_eigenvalue` for computing the eigenvalue
-and both supporting complex spheroidicity $c$ (and hence frequency $\omega$). See [Quick-start](@ref) below for some simple examples.
+and both supporting complex spheroidicity $c$ (and hence complex frequency $\omega$). See [Quick-start](@ref) below for some simple examples.
 
 In particular, we use the following normalization convention:
 ```math
@@ -45,6 +45,18 @@ theta=π/6; phi=π/3;
 # Construct the SpinWeightedSpheroidalHarmonicFunction
 swsh = spin_weighted_spheroidal_harmonic(s, l, m, a*omega)
 swsh(theta, phi)
+```
+
+### Computing the spherical-spheroidal mixing coefficients
+For example, to compute the spherical-spheroidal mixing coefficients for the mode $s = -2, \ell = 2, m = 2, a = 0.7, \omega = 0.5$, simply do
+```@repl
+using SpinWeightedSpheroidalHarmonics
+s=-2; l=2; m=2; a=0.7; omega=0.5;
+# Construct the SpinWeightedSpheroidalHarmonicFunction
+swsh = spin_weighted_spheroidal_harmonic(s, l, m, a*omega)
+# swsh.spherical_harmonics_l lists which spherical harmonic \ell modes were used in the decomposition
+# swsh.coeffs lists the mixing coefficients for each of the modes
+swsh.spherical_harmonics_l, swsh.coeffs
 ```
 
 ## License
