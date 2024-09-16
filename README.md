@@ -7,7 +7,7 @@
 SpinWeightedSpheroidalHarmonics.jl computes spin-weighted spheroidal harmonics and eigenvalues using a spectral decomposition method. As a natural by-product, it also computes spherical-spheroidal mixing coefficients.
 
 The two main features are implemented as
-- `spin_weighted_spheroidal_harmonic` for computing the harmonic ${}_{s} S_{\ell m}(\theta, \phi; c \equiv a \omega)$, and
+- `spin_weighted_spheroidal_harmonic` for computing the harmonic $_{s} S_{\ell m}(\theta, \phi; c \equiv a \omega)$, and
 - `spin_weighted_spheroidal_eigenvalue` for computing the eigenvalue
 and both supporting complex spheroidicity $c$ (and hence complex frequency $\omega$). See [Quick-start](@ref) below for some simple examples.
 
@@ -18,7 +18,7 @@ In particular, we use the following normalization convention:
 identical to the convention used in the Mathematica package [SpinWeightedSpheroidalHarmonics](https://bhptoolkit.org/SpinWeightedSpheroidalHarmonics/) from the Black Hole Perturbation Toolkit.
 
 Additionally, we provide two similar functions
-- `spin_weighted_spherical_harmonic` ${}_{s} Y_{\ell m}(\theta, \phi)$, and
+- `spin_weighted_spherical_harmonic` $_{s} Y_{\ell m}(\theta, \phi)$, and
 - `spin_weighted_spherical_eigenvalue`
 that return the exact harmonic and eigenvalue respectively.
 
