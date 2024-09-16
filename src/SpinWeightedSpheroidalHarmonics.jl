@@ -19,6 +19,7 @@ end
 struct SpinWeightedSpheroidalHarmonicFunction
     params::SpectralDecompositionInputParams
     coeffs
+    spherical_harmonics_l
     normalization_const
     lambda
 end
@@ -52,17 +53,6 @@ function _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, co
     output
 end
 
-function _determine_matrix_size_N(s::Int, l::Int, m::Int)
-    #=
-    Determine a suitable value of N for the spectral decomposition
-
-    The value of N calculated here is essentially lmax for
-    the spectral decomposition. Then we apply a 'buffer' of 10
-    =#
-    N = l - max(abs(m), abs(s)) + 1
-    return N + 10
-end
-
 @doc raw"""
     spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1)
 
@@ -81,10 +71,11 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1)
     end
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     coefficients = spectral_coefficients(c, s, l, m, N)
+    spherical_harmonics_l = construct_all_l_in_matrix(coefficients_params.s, coefficients_params.m, coefficients_params.N)
     normalization = 1 # already satisfied the normalization cond. \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
     lambda = spin_weighted_spheroidal_eigenvalue(s, l, m, c, N=N) # Not the most efficient way to do this, but it works
 
-    return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, normalization, lambda)
+    return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda)
 end
 
 # The power of multiple dispatch

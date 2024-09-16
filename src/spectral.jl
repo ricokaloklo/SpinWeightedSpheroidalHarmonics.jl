@@ -1,5 +1,7 @@
 using LinearAlgebra
 
+include("utils.jl")
+
 function Fslm(s::Int, l::Int, m::Int)
     # 'Edge' case where l is -1, this can happen when both |m| and |s| are 0 (since lmin = max(|m|, |s|))
     (l == -1 && abs(m) == 0 && abs(s) == 0) ? 0 : sqrt( ( (l+1)^2 - m^2 )/( (2*l+3)*(2*l+1) ) ) * sqrt( ( (l+1)^2 - s^2 )/( (l+1)^2 ) )
@@ -75,10 +77,14 @@ function construct_spectral_matrix(c, s::Int, m::Int, N::Int)
     spectral_matrix = Array(Symmetric(spectral_matrix))
 end
 
-function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=10)
+function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=-1)
     if c == 0
         # Return the Schwarzschild eigenvalue explicitly
         return eigenvalue_Schwarzschild(s, l)
+    end
+
+    if N == -1
+        N = _determine_matrix_size_N(s, l, m)
     end
 
     all_l_in_matrix = construct_all_l_in_matrix(s, m, N)
@@ -90,7 +96,11 @@ function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=10)
     eigenvalues[indexin(l, all_l_in_matrix)[1]]
 end
 
-function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=10)
+function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1)
+    if N == -1
+        N = _determine_matrix_size_N(s, l, m)
+    end
+
     all_l_in_matrix = construct_all_l_in_matrix(s, m, N)
     spectral_matrix = construct_spectral_matrix(c, s, m, N)
 
@@ -105,6 +115,10 @@ function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=10)
     return v/sqrt(dot(v,v))
 end
 
-function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=10)
+function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=-1)
+    if N == -1
+        N = _determine_matrix_size_N(s, l, m)
+    end
+
     angular_sep_const(c, s, l, m, N) + c^2 - 2*m*c
 end
