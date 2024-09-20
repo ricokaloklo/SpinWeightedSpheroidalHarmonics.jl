@@ -1,3 +1,6 @@
+using LinearAlgebra
+using ApproxFun
+using TaylorSeries
 using AbstractTrees
 include("binarytree.jl")
 
@@ -44,13 +47,47 @@ function _summation_term_prefactors(s::Int, l::Int, m::Int)
     return prefactors, max_val
 end
 
-function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi; method="auto")
+    if method == "auto"
+        _method = l >= 30 ? "chebyshev" : "direct"
+        return _nth_derivative_spherical_harmonic(s, l, m, theta_derivative, phi_derivative, theta, phi; method=_method)
+    elseif method == "direct"
+        return _nth_derivative_spherical_harmonic_direct_eval(s, l, m, theta_derivative, phi_derivative, theta, phi)
+    elseif method == "chebyshev"
+        return _nth_derivative_spherical_harmonic_chebyshev(s, l, m, theta_derivative, phi_derivative, theta, phi)
+    else
+        error("Does not understand method $method")
+    end
+end
+
+function _nth_derivative_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+    # Evaluate sYlm(0,0) using the direct method for consistency
+    Y0 = real(_nth_derivative_spherical_harmonic_direct_eval(s, l, m, 0, 0, 0, 0))
+
+    # Define the domain
+    # NOTE x=cos(theta), x = -1 when \theta is \pi and x = 1 when \theta is 0
+    a, b = -1, 1;
+    dom = a..b;
+
+    # Define the differential operator
+    x = Fun(dom);
+    D = Derivative(dom);
+    L = (1 - x^2)*D^2 - 2*x*D + (s + l*(l+1) - s*(s+1) - (m + s*x)^2/(1-x^2));
+
+    bvals = [0, Y0] # Boundary values
+    u = [Dirichlet(dom); L] \ [bvals, 0];
+    Y(θ) = u(cos(θ))
+
+    factorial(theta_derivative)*getcoeff(taylor_expand(Y, theta, order=theta_derivative), theta_derivative) * cis(m*phi) * (m*1im)^phi_derivative
+end
+
+function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
     ct2 = cos(theta/2)
     st2 = sin(theta/2)
 
     _sum = 0.0
     summation_term_prefactors, log_normalization_const = _summation_term_prefactors(s, l, m)
-    for r in 0:l-s
+    for r in max(0, m-s):min(l-s, l+m)
         _rsum = 0.0
         root = BinaryNode(ct2_st2(1, 2*r+s-m, 2*l-2*r-s+m)) # root of the tree
         # building the binary tree

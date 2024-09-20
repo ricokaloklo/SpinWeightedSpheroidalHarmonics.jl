@@ -80,12 +80,17 @@ end
 
 # The power of multiple dispatch
 @doc raw"""
-    SpinWeightedSpheroidalHarmonicFunction(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
+    SpinWeightedSpheroidalHarmonicFunction(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0, method="auto")
 
 Compute the value of the spin-weighted spheroidal harmonic at the point `(theta, phi)`. 
 Additionally compute the `theta_derivative`-th derivative with respect to `theta` and the `phi_derivative`-th derivative with respect to `phi` exactly.
+
+By default, the method used to compute the value is chosen automatically based on the value of the harmonic index `l`.
+When `l < 30`, the direct evaluation method (`method="direct"`) is used where we evaluate the exact analytical solution as shown in Eq. (A8).
+However, the prefactor in each term of the sum can be very large and thus cause overflow, while the sum itself is finite (of order 1 actually).
+Therefore, when `l >= 30`, the Chebyshev pseudo-spectral method (`method="chebyshev"`) is used instead.
 """
-(swsh_func::SpinWeightedSpheroidalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0) = begin
+(swsh_func::SpinWeightedSpheroidalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0, method="auto") = begin
     _unnormalized_spin_weighted_spheroidal_harmonic(swsh_func.params, swsh_func.coeffs, theta, phi; theta_derivative=theta_derivative, phi_derivative=phi_derivative) / swsh_func.normalization_const
 end
 
@@ -104,7 +109,7 @@ end
 @doc raw"""
     SpinWeightedSphericalHarmonicFunction(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
 
-Compute the exact value of the spin-weighted spherical harmonic at the point `(theta, phi)`.
+Compute the value of the spin-weighted spherical harmonic at the point `(theta, phi)`.
 Additionally compute the `theta_derivative`-th derivative with respect to `theta` and the `phi_derivative`-th derivative with respect to `phi` exactly.
 """
 (swsh_func::SpinWeightedSphericalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0) = begin
