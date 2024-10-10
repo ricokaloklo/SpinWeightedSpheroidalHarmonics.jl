@@ -24,8 +24,6 @@ that return the exact harmonic and eigenvalue respectively.
 
 Exact partial derivatives (with respect to either $\theta$ and/or $\phi$) can be evaluated by specifying the derivative order with `theta_derivative` and `phi_derivative` respectively when calling the functions for a harmonic.
 
-Note that v0.5.0 is a *breaking* release.
-
 ## Installation
 To install the package using the Julia package manager, simply type the following in the Julia REPL:
 ```julia
