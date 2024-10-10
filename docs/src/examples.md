@@ -11,7 +11,7 @@ swsh = spin_weighted_spheroidal_harmonic(s, l, m, a*omega)
 That's it! Now let us visualize the harmonic itself and the first and second partial derivative with respect to $\theta$:
 ```julia
 thetas = collect(0:0.01:1)
-plot(thetas, [real(swsh(theta*pi, 0)) for theta in thetas], linewidth=2, label=L"{}_{-2}S_{2,2}(\theta, 0; c = 0.35)")
+plot(thetas, [real(swsh(theta*pi, 0)) for theta in thetas], linewidth=2, label=L"{}_{-2}S_{2,2}(\theta, 0; c = 0.35)", dpi=300)
 plot!(thetas, [real(swsh(theta*pi, 0; theta_derivative=1)) for theta in thetas], linewidth=2, label=L"\partial_{\theta} {}_{-2}S_{2,2}(\theta, 0; c = 0.35)")
 plot!(thetas, [real(swsh(theta*pi, 0; theta_derivative=2)) for theta in thetas], linewidth=2, label=L"\partial_{\theta}^2 {}_{-2}S_{2,2}(\theta, 0; c = 0.35)")
 plot!(
