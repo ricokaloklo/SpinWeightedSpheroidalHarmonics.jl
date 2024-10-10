@@ -12,11 +12,6 @@ struct ct2_st2
     st2_power::Int
 end
 
-# Caching mechanism for the harmonic using Chebyshev pseudospectral method
-_cached_chebyshev_soln::NamedTuple{(:s, :l, :m, :soln), Tuple{Int, Int, Int, Function}} = (
-    s=1, l=-1, m=-10, soln = (x -> NaN)
-)
-
 function log_factorial(n::Int)
     if n == 0
         return 0
@@ -53,23 +48,10 @@ function _summation_term_prefactors(s::Int, l::Int, m::Int)
     return prefactors, max_val
 end
 
-function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi; method="auto")
-    if method == "auto"
-        _method = l >= 30 ? "chebyshev" : "direct"
-        return _nth_derivative_spherical_harmonic(s, l, m, theta_derivative, phi_derivative, theta, phi; method=_method)
-    elseif method == "direct"
-        return _nth_derivative_spherical_harmonic_direct_eval(s, l, m, theta_derivative, phi_derivative, theta, phi)
-    elseif method == "chebyshev"
-        return _nth_derivative_spherical_harmonic_chebyshev(s, l, m, theta_derivative, phi_derivative, theta, phi)
-    else
-        error("Does not understand method $method")
-    end
-end
-
 function spin_weighted_spherical_harmonic_at_pi_over_2(s::Int, l::Int, m::Int)
-    # Useful functions
     # NOTE These functions might look familiar to you
     # Indeed they are the same as above, but using LogarithmicNumbers with arbitrary precisions
+    # NOTE They are not fast
     function bigfactorial(n)
         if n == 0
             return ULogarithmic(BigInt(1))
@@ -97,7 +79,7 @@ function spin_weighted_spherical_harmonic_at_pi_over_2(s::Int, l::Int, m::Int)
     _swsh_prefactor(s, l, m)*float(sum([prefactor_sign(s,l,r)*_summation_term_prefactor(s,l,m,r)/two_to_the_pow_2 for r in rmin:1:rmax]))
 end
 
-function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     # Evaluate sYlm(0,0) using the direct method for consistency
     Y0 = real(_nth_derivative_spherical_harmonic_direct_eval(s, l, m, 0, 0, 0, 0))
     # Evaluate sYlm(\pi/2, 0) using a numerically stable method
@@ -132,17 +114,8 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int, theta_deriv
     return Y
 end
 
-function _nth_derivative_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
-    global _cached_chebyshev_soln
-
-    if !isnothing(_cached_chebyshev_soln) && _cached_chebyshev_soln.s == s && _cached_chebyshev_soln.l == l && _cached_chebyshev_soln.m == m
-        Y = _cached_chebyshev_soln.soln
-    else
-        Y = _solve_spherical_harmonic_chebyshev(s, l, m, theta_derivative, phi_derivative, theta, phi)
-        _cached_chebyshev_soln = (s=s, l=l, m=m, soln=Y) # Update cache
-    end
-
-    factorial(theta_derivative)*getcoeff(taylor_expand(Y, theta, order=theta_derivative), theta_derivative) * cis(m*phi) * (m*1im)^phi_derivative
+function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+    factorial(theta_derivative)*getcoeff(taylor_expand(chebyshev_Y, theta, order=theta_derivative), theta_derivative) * cis(m*phi) * (m*1im)^phi_derivative
 end
 
 function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
