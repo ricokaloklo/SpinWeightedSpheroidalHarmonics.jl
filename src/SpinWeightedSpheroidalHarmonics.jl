@@ -8,27 +8,6 @@ include("spectral.jl")
 export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue, spin_weighted_spherical_eigenvalue # Expose these functions to the user
 export Teukolsky_lambda_const # For backward compatbility
 
-struct SpectralDecompositionInputParams
-    s::Int
-    l::Int
-    m::Int
-    c
-    N::Int
-end
-
-struct SpinWeightedSpheroidalHarmonicFunction
-    params::SpectralDecompositionInputParams
-    coeffs
-    spherical_harmonics_l
-    normalization_const
-    lambda
-end
-
-# Implement pretty printing for SpinWeightedSpheroidalHarmonicFunction
-function Base.show(io::IO, ::MIME"text/plain", swsh_func::SpinWeightedSpheroidalHarmonicFunction)
-    print(io, "SpinWeightedSpheroidalHarmonicFunction(s = $(swsh_func.params.s), l = $(swsh_func.params.l), m = $(swsh_func.params.m), c = $(swsh_func.params.c), lambda = $(swsh_func.lambda))")
-end
-
 struct SpinWeightedSphericalHarmonicFunction
     s::Int
     l::Int
@@ -40,6 +19,27 @@ end
 # Implement pretty printing for SpinWeightedSphericalHarmonicFunction
 function Base.show(io::IO, ::MIME"text/plain", swsh_func::SpinWeightedSphericalHarmonicFunction)
     print(io, "SpinWeightedSphericalHarmonicFunction(s = $(swsh_func.s), l = $(swsh_func.l), m = $(swsh_func.m), lambda = $(swsh_func.lambda))")
+end
+
+struct SpectralDecompositionInputParams
+    s::Int
+    l::Int
+    m::Int
+    c
+    N::Int
+end
+
+struct SpinWeightedSpheroidalHarmonicFunction
+    params::SpectralDecompositionInputParams
+    coeffs
+    spherical_harmonics_l::Vector{SpinWeightedSphericalHarmonicFunction}
+    normalization_const
+    lambda
+end
+
+# Implement pretty printing for SpinWeightedSpheroidalHarmonicFunction
+function Base.show(io::IO, ::MIME"text/plain", swsh_func::SpinWeightedSpheroidalHarmonicFunction)
+    print(io, "SpinWeightedSpheroidalHarmonicFunction(s = $(swsh_func.params.s), l = $(swsh_func.params.l), m = $(swsh_func.params.m), c = $(swsh_func.params.c), lambda = $(swsh_func.lambda))")
 end
 
 function _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, coefficients, spherical_harmonics_l, theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
