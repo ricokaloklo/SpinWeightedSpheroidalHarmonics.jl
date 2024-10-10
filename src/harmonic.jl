@@ -1,6 +1,7 @@
 using LinearAlgebra
 using ApproxFun
 using TaylorSeries
+using LogarithmicNumbers
 using AbstractTrees
 include("binarytree.jl")
 
@@ -47,38 +48,74 @@ function _summation_term_prefactors(s::Int, l::Int, m::Int)
     return prefactors, max_val
 end
 
-function _nth_derivative_spherical_harmonic(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi; method="auto")
-    if method == "auto"
-        _method = l >= 30 ? "chebyshev" : "direct"
-        return _nth_derivative_spherical_harmonic(s, l, m, theta_derivative, phi_derivative, theta, phi; method=_method)
-    elseif method == "direct"
-        return _nth_derivative_spherical_harmonic_direct_eval(s, l, m, theta_derivative, phi_derivative, theta, phi)
-    elseif method == "chebyshev"
-        return _nth_derivative_spherical_harmonic_chebyshev(s, l, m, theta_derivative, phi_derivative, theta, phi)
-    else
-        error("Does not understand method $method")
+function spin_weighted_spherical_harmonic_at_pi_over_2(s::Int, l::Int, m::Int)
+    # NOTE These functions might look familiar to you
+    # Indeed they are the same as above, but using LogarithmicNumbers with arbitrary precisions
+    # NOTE They are not fast
+    function bigfactorial(n)
+        if n == 0
+            return ULogarithmic(BigInt(1))
+        end
+
+        return prod(ULogarithmic(BigInt(k)) for k in 1:n)
     end
+
+    function _summation_term_prefactor(s::Int, l::Int, m::Int, r::Int)
+        # Note that this does not include the (-1)^(l-r-s) factor
+        # Check for negative arguments
+        if (l-s-r) < 0 || (l-r+m) < 0 || (r+s-m) < 0
+            # The whole thing is just 0
+            return 0
+        end
+
+        return (bigfactorial(l-s)/(bigfactorial(l-s-r)*bigfactorial(r))) * (bigfactorial(l+s)/(bigfactorial(l-r+m)*bigfactorial(r+s-m)))
+    end
+
+    rmin = max(0, m-s)
+    rmax = min(l-s, l+m)
+
+    prefactor_sign(s, l, r) = (l-r-s) % 2 == 0 ? 1 : -1
+    two_to_the_pow_2 = ULogarithmic(BigInt(2))^(ULogarithmic(BigInt(l)))
+    _swsh_prefactor(s, l, m)*float(sum([prefactor_sign(s,l,r)*_summation_term_prefactor(s,l,m,r)/two_to_the_pow_2 for r in rmin:1:rmax]))
 end
 
-function _nth_derivative_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     # Evaluate sYlm(0,0) using the direct method for consistency
     Y0 = real(_nth_derivative_spherical_harmonic_direct_eval(s, l, m, 0, 0, 0, 0))
+    # Evaluate sYlm(\pi/2, 0) using a numerically stable method
+    Ypi2 = Float64(spin_weighted_spherical_harmonic_at_pi_over_2(s, l, m))
+    Ypi = 0.0 # Always 0
 
-    # Define the domain
+    # Split the domain into two parts -- one from theta = π to π/2 and from π/2 to 0
     # NOTE x=cos(theta), x = -1 when \theta is \pi and x = 1 when \theta is 0
-    a, b = -1, 1;
-    dom = a..b;
+
+    # Solve in the first domain
+    a, b = -1, 0
+    dom1 = a..b
 
     # Define the differential operator
-    x = Fun(dom);
-    D = Derivative(dom);
-    L = (1 - x^2)*D^2 - 2*x*D + (s + l*(l+1) - s*(s+1) - (m + s*x)^2/(1-x^2));
+    x = Fun(dom1)
+    D = Derivative(dom1)
+    L = (1 - x^2)*D^2 - 2*x*D + (s + l*(l+1) - s*(s+1) - (m + s*x)^2/(1-x^2))
 
-    bvals = [0, Y0] # Boundary values
-    u = [Dirichlet(dom); L] \ [bvals, 0];
-    Y(θ) = u(cos(θ))
+    bvals = [Ypi, Ypi2] # Boundary values
+    u = [Dirichlet(dom1); L] \ [bvals, 0]
 
-    factorial(theta_derivative)*getcoeff(taylor_expand(Y, theta, order=theta_derivative), theta_derivative) * cis(m*phi) * (m*1im)^phi_derivative
+    # Solve in the second domain
+    dom2 = 0..1
+    x = Fun(dom2)
+    D = Derivative(dom2)
+    L = (1 - x^2)*D^2 - 2*x*D + (s + l*(l+1) - s*(s+1) - (m + s*x)^2/(1-x^2))
+
+    bvals = [Ypi2, Y0] # Boundary values
+    v = [Dirichlet(dom2); L] \ [bvals, 0]
+
+    Y(θ) = θ > π/2 ? u(cos(θ)) : v(cos(θ))
+    return Y
+end
+
+function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+    factorial(theta_derivative)*getcoeff(taylor_expand(chebyshev_Y, theta, order=theta_derivative), theta_derivative) * cis(m*phi) * (m*1im)^phi_derivative
 end
 
 function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
