@@ -9,7 +9,9 @@ SpinWeightedSpheroidalHarmonics.jl computes spin-weighted spheroidal harmonics a
 The two main features are implemented as
 - `spin_weighted_spheroidal_harmonic` for computing the harmonic $`\,{}_{s} S_{\ell m}(\theta, \phi; c \equiv a \omega)`$, and
 - `spin_weighted_spheroidal_eigenvalue` for computing the eigenvalue
-and both supporting complex spheroidicity $c$ (and hence complex frequency $\omega$). See Quick-start below for some simple examples.
+and both supporting complex spheroidicity $c$ (and hence complex frequency $\omega$).
+
+See Quick-start below for some simple examples.
 
 In particular, we use the following normalization convention:
 ```math
@@ -20,6 +22,7 @@ identical to the convention used in the Mathematica package [SpinWeightedSpheroi
 Additionally, we provide two similar functions
 - `spin_weighted_spherical_harmonic` $`\,{}_{s} Y_{\ell m}(\theta, \phi)`$, and
 - `spin_weighted_spherical_eigenvalue`
+
 that return the exact harmonic and eigenvalue respectively.
 
 Exact partial derivatives (with respect to either $\theta$ and/or $\phi$) can be evaluated by specifying the derivative order with `theta_derivative` and `phi_derivative` respectively when calling the functions for a harmonic.
