@@ -145,7 +145,9 @@ function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, 
         end
         # now traverse the final tree
         for leaf in Leaves(root)
-            _rsum += leaf.data.coeff * ct2^(leaf.data.ct2_power) * st2^(leaf.data.st2_power)
+            if leaf.data.coeff != 0
+                _rsum += leaf.data.coeff * ct2^(leaf.data.ct2_power) * st2^(leaf.data.st2_power)
+            end
         end
         _rsum *= summation_term_prefactors[r+1]
         _sum += _rsum
