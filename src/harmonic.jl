@@ -1,7 +1,6 @@
 using LinearAlgebra
 using ApproxFun
 using SpecialFunctions
-using TaylorSeries
 using LogarithmicNumbers
 using AbstractTrees
 include("binarytree.jl")
@@ -108,7 +107,17 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
 end
 
 function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
-    factorial(theta_derivative)*getcoeff(taylor_expand(chebyshev_Y, theta, order=theta_derivative), theta_derivative) * cis(m*phi) * (m*1im)^phi_derivative
+    # Find the proper _theta in [0, π] and _phi in [0, 2π) to evaluate
+    _theta = mod(theta, 2π)
+    _phi = phi
+    _theta = _theta < 0 ? _theta + 2π : _theta
+    if _theta > π
+        _theta = 2π - _theta
+        _phi += π
+    end
+
+    Y_fun = Fun(chebyshev_Y, 0..π)
+    return differentiate(Y_fun, theta_derivative)(_theta) * cis(m*_phi) * (m*1im)^phi_derivative
 end
 
 function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
