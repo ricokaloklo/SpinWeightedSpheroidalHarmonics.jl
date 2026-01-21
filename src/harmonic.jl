@@ -73,8 +73,8 @@ function spin_weighted_spherical_harmonic_at_pi_over_2(s::Int, l::Int, m::Int)
 end
 
 function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
-    # Evaluate sYlm(0,0) using the direct method for consistency
-    Y0 = real(_nth_derivative_spherical_harmonic_direct_eval(s, l, m, 0, 0, 0, 0))
+    # Evaluate sYlm(0,0) exactly
+    Y0 = m == -s ? (-1)^s * sqrt((2*l+1)/(4π)) : 0.0
     # Evaluate sYlm(\pi/2, 0) using a numerically stable method
     Ypi2 = Float64(spin_weighted_spherical_harmonic_at_pi_over_2(s, l, m))
     Ypi = 0.0 # Always 0
