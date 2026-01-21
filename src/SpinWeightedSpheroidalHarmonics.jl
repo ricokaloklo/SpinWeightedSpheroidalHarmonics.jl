@@ -8,6 +8,8 @@ include("spectral.jl")
 export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue, spin_weighted_spherical_eigenvalue # Expose these functions to the user
 export Teukolsky_lambda_const # For backward compatbility
 
+_TOLERANCE = 1e-16 # Spherical harmonics smaller than this will be ignored in the spectral decomposition
+
 struct SpinWeightedSphericalHarmonicFunction
     s::Int
     l::Int
@@ -48,6 +50,9 @@ function _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, co
     l_list = construct_all_l_in_matrix(coefficients_params.s, coefficients_params.m, coefficients_params.N)
 
     for (idx, _) in enumerate(l_list)
+        if abs(coefficients[idx]) < _TOLERANCE
+            continue
+        end
         output += coefficients[idx] * spherical_harmonics_l[idx](theta, phi; theta_derivative=theta_derivative, phi_derivative=phi_derivative)
     end
     output
