@@ -1,20 +1,22 @@
 name = "SpinWeightedSpheroidalHarmonics"
 uuid = "680e17a6-2a17-48fd-ae01-e2b5a643bef0"
-authors = ["Rico Ka Lok Lo"]
 version = "1.0.1"
+authors = ["Rico Ka Lok Lo"]
 
 [deps]
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
 ApproxFun = "28f2ccd6-bb30-5033-b560-165f7b14dc2f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LogarithmicNumbers = "aa2f6b4e-9042-5d33-9679-40d3a6b85899"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 TaylorSeries = "6aa5eb33-94cf-58f4-a9d0-e4b2c4fc25ea"
 
 [compat]
 AbstractTrees = "0.4.2"
 ApproxFun = "^0.13"
-TaylorSeries = "^0.18"
 LogarithmicNumbers = "^1"
+SpecialFunctions = "2.6.1"
+TaylorSeries = "^0.18"
 julia = "1"
 
 [extras]

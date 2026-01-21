@@ -1,5 +1,6 @@
 using LinearAlgebra
 using ApproxFun
+using SpecialFunctions
 using TaylorSeries
 using LogarithmicNumbers
 using AbstractTrees
@@ -12,15 +13,7 @@ struct ct2_st2
     st2_power::Int
 end
 
-function log_factorial(n::Int)
-    if n == 0
-        return 0
-    elseif n < 0
-        return -Inf
-    else
-        return sum(log(k) for k in 1:n)
-    end
-end
+log_factorial(n::Int) = n < 0 ? -Inf : loggamma(n + 1)
 
 function _log_summation_term_prefactor(s::Int, l::Int, m::Int, r::Int)
     # Note that this does not include the (-1)^(l-r-s) factor
