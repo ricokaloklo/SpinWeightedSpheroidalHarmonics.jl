@@ -89,7 +89,7 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     # Define the differential operator
     x = Fun(dom1)
     D = Derivative(dom1)
-    L = (1 - x^2)*D^2 - 2*x*D + (s + l*(l+1) - s*(s+1) - (m + s*x)^2/(1-x^2))
+    L = (1 - x^2)*(1 - x^2)*D^2 - 2*x*(1 - x^2)*D + ((s + l*(l+1) - s*(s+1))*(1 - x^2) - (m + s*x)^2)
 
     bvals = [Ypi, Ypi2] # Boundary values
     u = [Dirichlet(dom1); L] \ [bvals, 0]
@@ -98,7 +98,6 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     dom2 = 0..1
     x = Fun(dom2)
     D = Derivative(dom2)
-    L = (1 - x^2)*D^2 - 2*x*D + (s + l*(l+1) - s*(s+1) - (m + s*x)^2/(1-x^2))
 
     bvals = [Ypi2, Y0] # Boundary values
     v = [Dirichlet(dom2); L] \ [bvals, 0]
