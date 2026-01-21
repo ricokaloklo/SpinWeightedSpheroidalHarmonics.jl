@@ -77,14 +77,14 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     Y0 = m == -s ? (-1)^s * sqrt((2*l+1)/(4π)) : 0.0
     # Evaluate sYlm(\pi/2, 0) using a numerically stable method
     Ypi2 = Float64(spin_weighted_spherical_harmonic_at_pi_over_2(s, l, m))
-    Ypi = 0.0 # Always 0
+    # Evaluate sYlm(\pi,0) exactly
+    Ypi = m == s ? (-1)^l * sqrt((2l+1)/(4π)) : 0.0
 
     # Split the domain into two parts -- one from theta = π to π/2 and from π/2 to 0
     # NOTE x=cos(theta), x = -1 when \theta is \pi and x = 1 when \theta is 0
 
     # Solve in the first domain
-    a, b = -1, 0
-    dom1 = a..b
+    dom1 = -1..0
 
     # Define the differential operator
     x = Fun(dom1)
