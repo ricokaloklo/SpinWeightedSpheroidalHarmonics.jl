@@ -152,7 +152,13 @@ function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, 
         _rsum *= summation_term_prefactors[r+1]
         _sum += _rsum
     end
-    exp(log_normalization_const) * _swsh_prefactor(s, l, m) * _sum * cis(m*phi) * (m*1im)^phi_derivative
+
+    swsh_pref = _swsh_prefactor(s, l, m)
+    log_amp = log_normalization_const + log(abs(_sum)) + log(abs(swsh_pref))
+    sign_total = sign(_sum) * sign(swsh_pref)
+    amp = exp(log_amp)
+    return amp * sign_total * cis(m*phi) * (m*1im)^phi_derivative
+
 end
 
 function _swsh_prefactor(s::Int, l::Int, m::Int)
