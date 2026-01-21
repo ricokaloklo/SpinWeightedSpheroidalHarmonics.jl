@@ -153,6 +153,11 @@ function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, 
         _sum += _rsum
     end
 
+    # Check if _sum is zero before taking log
+    if _sum == 0.0
+        return 0.0
+    end
+
     swsh_pref = _swsh_prefactor(s, l, m)
     log_amp = log_normalization_const + log(abs(_sum)) + log(abs(swsh_pref))
     sign_total = sign(_sum) * sign(swsh_pref)
