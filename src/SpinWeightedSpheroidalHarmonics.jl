@@ -34,7 +34,7 @@ end
 struct SpinWeightedSpheroidalHarmonicFunction
     params::SpectralDecompositionInputParams
     coeffs
-    spherical_harmonics_l::Vector{SpinWeightedSphericalHarmonicFunction}
+    spherical_harmonics_l::Vector{Union{SpinWeightedSphericalHarmonicFunction, Nothing}}
     normalization_const
     lambda
 end
@@ -83,9 +83,7 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1,
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     coefficients = spectral_coefficients(c, s, l, m, N)
     l_list = construct_all_l_in_matrix(coefficients_params.s, coefficients_params.m, coefficients_params.N)
-    spherical_harmonics_l = [
-        spin_weighted_spherical_harmonic(s, l, m; method=method) for l in l_list
-    ]
+    spherical_harmonics_l = [ abs(coefficients[n]) >= _TOLERANCE ? spin_weighted_spherical_harmonic(s, l_list[n], m; method=method) : nothing for n in eachindex(l_list) ]
     normalization = 1 # already satisfied the normalization cond. \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
     lambda = spin_weighted_spheroidal_eigenvalue(s, l, m, c, N=N) # Not the most efficient way to do this, but it works
 
