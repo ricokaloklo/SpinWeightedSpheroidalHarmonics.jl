@@ -143,7 +143,7 @@ Additionally compute the `theta_derivative`-th derivative with respect to `theta
     if isnothing(swsh_func.chebyshev_solution)
         return _nth_derivative_spherical_harmonic_direct_eval(swsh_func.s, swsh_func.l, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
     else
-        return _nth_derivative_spherical_harmonic_chebyshev(swsh_func.chebyshev_solution, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
+        return _nth_derivative_spherical_harmonic_chebyshev(swsh_func.chebyshev_solution, swsh_func.s, swsh_func.l, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
     end
 end
 

@@ -106,7 +106,7 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     return Y
 end
 
-function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
     # Find the proper _theta in [0, π] and _phi in [0, 2π) to evaluate
     _theta = mod(theta, 2π)
     _phi = phi
@@ -117,7 +117,14 @@ function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, m::
     end
 
     Y_fun = Fun(chebyshev_Y, 0..π)
-    return differentiate(Y_fun, theta_derivative)(_theta) * cis(m*_phi) * (m*1im)^phi_derivative
+
+    # Revert back to direct evaluation method for the two boundary points
+    if isapprox(_theta, 0.0; atol=1e-3) || isapprox(_theta, π; atol=1e-3)
+        return _nth_derivative_spherical_harmonic_direct_eval(s, l, m, theta_derivative, phi_derivative, _theta, _phi)
+    end
+    # Compute the theta derivative for interior points using ApproxFun
+    Y_deriv = theta_derivative == 0 ? Y_fun(_theta) : differentiate(Y_fun, theta_derivative)(_theta)
+    return Y_deriv * cis(m*_phi) * (m*1im)^phi_derivative
 end
 
 function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
