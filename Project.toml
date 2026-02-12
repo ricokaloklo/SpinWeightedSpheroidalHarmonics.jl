@@ -1,6 +1,6 @@
 name = "SpinWeightedSpheroidalHarmonics"
 uuid = "680e17a6-2a17-48fd-ae01-e2b5a643bef0"
-version = "1.1.0"
+version = "1.2.0"
 authors = ["Rico Ka Lok Lo"]
 
 [deps]
