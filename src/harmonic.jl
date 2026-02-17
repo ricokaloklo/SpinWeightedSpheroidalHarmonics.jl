@@ -127,6 +127,157 @@ function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, s::
     return Y_deriv * cis(m*_phi) * (m*1im)^phi_derivative
 end
 
+function _jacobi_polynomial_recurrence(n::Int, α::Int, β::Int, x::Real)
+    if n < 0
+        error("Jacobi polynomial order n must be non-negative")
+    end
+
+    αf = float(α)
+    βf = float(β)
+    xf = float(x)
+
+    n == 0 && return 1.0
+
+    pnm1 = 1.0
+    pn = 0.5 * ((2 + αf + βf) * xf + (αf - βf))
+    n == 1 && return pn
+
+    for k in 1:n-1
+        kf = float(k)
+        A = 2 * (kf + 1) * (kf + αf + βf + 1) * (2 * kf + αf + βf)
+        B = (2 * kf + αf + βf + 1) * ((2 * kf + αf + βf + 2) * (2 * kf + αf + βf) * xf + αf^2 - βf^2)
+        C = 2 * (kf + αf) * (kf + βf) * (2 * kf + αf + βf + 2)
+        pnp1 = (B * pn - C * pnm1) / A
+        pnm1, pn = pn, pnp1
+    end
+    return pn
+end
+
+function _spin_weighted_spherical_harmonic_jacobi_core_nonnegative_m(s::Int, l::Int, m::Int, theta)
+    m < 0 && error("Jacobi core expects m >= 0")
+
+    α = m + s
+    β = m - s
+    n = l - m
+
+    x = cos(theta)
+    st2 = sin(theta / 2)
+    ct2 = cos(theta / 2)
+    P = _jacobi_polynomial_recurrence(n, α, β, x)
+
+    return _swsh_prefactor(s, l, m) * st2^α * ct2^β * P
+end
+
+function _differentiate_jacobi_terms(terms::Dict{NTuple{5, Int}, Float64})
+    # Each term is represented as:
+    # coeff * sin(theta/2)^a * cos(theta/2)^b * P_n^(p,q)(cos(theta))
+    # with key (n, p, q, a, b).
+    dterms = Dict{NTuple{5, Int}, Float64}()
+    for (key, coeff) in terms
+        n, p, q, a, b = key
+
+        if a != 0
+            key1 = (n, p, q, a - 1, b + 1)
+            dterms[key1] = get(dterms, key1, 0.0) + coeff * (0.5 * a)
+        end
+
+        if b != 0
+            key2 = (n, p, q, a + 1, b - 1)
+            dterms[key2] = get(dterms, key2, 0.0) - coeff * (0.5 * b)
+        end
+
+        if n > 0
+            key3 = (n - 1, p + 1, q + 1, a + 1, b + 1)
+            dterms[key3] = get(dterms, key3, 0.0) - coeff * (n + p + q + 1)
+        end
+    end
+    return dterms
+end
+
+function _spin_weighted_spherical_harmonic_jacobi_theta_derivative_nonnegative_m(s::Int, l::Int, m::Int, theta, theta_derivative::Int)
+    m < 0 && error("Jacobi theta-derivative core expects m >= 0")
+    theta_derivative < 0 && error("theta_derivative must be non-negative")
+
+    p = m + s
+    q = m - s
+    n = l - m
+
+    terms = Dict{NTuple{5, Int}, Float64}((n, p, q, p, q) => 1.0)
+    for _ in 1:theta_derivative
+        terms = _differentiate_jacobi_terms(terms)
+    end
+
+    x = cos(theta)
+    st2 = sin(theta / 2)
+    ct2 = cos(theta / 2)
+
+    out = 0.0
+    for (key, coeff) in terms
+        nterm, pterm, qterm, aterm, bterm = key
+        out += coeff * st2^aterm * ct2^bterm * _jacobi_polynomial_recurrence(nterm, pterm, qterm, x)
+    end
+
+    return _swsh_prefactor(s, l, m) * out
+end
+
+function _spin_weighted_spherical_harmonic_jacobi_value(s::Int, l::Int, m::Int, theta, phi)
+    # Map angles to the principal interval to avoid branch issues from integer powers.
+    _theta = mod(theta, 2π)
+    _phi = phi
+    _theta = _theta < 0 ? _theta + 2π : _theta
+    if _theta > π
+        _theta = 2π - _theta
+        _phi += π
+    end
+
+    # Exact boundary values.
+    if isapprox(_theta, 0.0; atol=1e-14)
+        return (m == -s ? (-1)^s * sqrt((2*l+1)/(4π)) : 0.0) * cis(m * _phi)
+    elseif isapprox(_theta, π; atol=1e-14)
+        return (m == s ? (-1)^l * sqrt((2*l+1)/(4π)) : 0.0) * cis(m * _phi)
+    end
+
+    if m >= 0
+        return _spin_weighted_spherical_harmonic_jacobi_core_nonnegative_m(s, l, m, _theta) * cis(m * _phi)
+    end
+
+    # Use the standard symmetry relation for negative m.
+    reflected = _spin_weighted_spherical_harmonic_jacobi_core_nonnegative_m(-s, l, -m, _theta) * cis((-m) * _phi)
+    return (-1)^(s - m) * conj(reflected)
+end
+
+function _nth_derivative_spherical_harmonic_jacobi(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+    theta_derivative < 0 && error("theta_derivative must be non-negative")
+    phi_derivative < 0 && error("phi_derivative must be non-negative")
+
+    # Find the proper _theta in [0, π] and _phi in [0, 2π) to evaluate.
+    _theta = mod(theta, 2π)
+    _phi = phi
+    _theta = _theta < 0 ? _theta + 2π : _theta
+    if _theta > π
+        _theta = 2π - _theta
+        _phi += π
+    end
+
+    if m < 0
+        reflected = _nth_derivative_spherical_harmonic_jacobi(-s, l, -m, theta_derivative, phi_derivative, _theta, _phi)
+        return (-1)^(s - m) * conj(reflected)
+    end
+
+    if theta_derivative == 0
+        y = _spin_weighted_spherical_harmonic_jacobi_value(s, l, m, _theta, _phi)
+        return y * (m * 1im)^phi_derivative
+    end
+
+    # Near boundaries, use the direct expression to avoid catastrophic cancellation from negative powers.
+    if isapprox(_theta, 0.0; atol=1e-3) || isapprox(_theta, π; atol=1e-3)
+        return _nth_derivative_spherical_harmonic_direct_eval(s, l, m, theta_derivative, phi_derivative, _theta, _phi)
+    end
+
+    theta_part = _spin_weighted_spherical_harmonic_jacobi_theta_derivative_nonnegative_m(s, l, m, _theta, theta_derivative)
+    return theta_part * cis(m * _phi) * (m * 1im)^phi_derivative
+end
+
 function _nth_derivative_spherical_harmonic_direct_eval(s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
     ct2 = cos(theta/2)
     st2 = sin(theta/2)

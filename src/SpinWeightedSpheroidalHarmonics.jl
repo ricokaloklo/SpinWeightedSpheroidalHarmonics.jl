@@ -10,17 +10,26 @@ export Teukolsky_lambda_const # For backward compatbility
 
 _TOLERANCE = 1e-16 # Spherical harmonics smaller than this will be ignored in the spectral decomposition
 
+function _normalize_spherical_method(method)
+    normalized = lowercase(strip(String(method)))
+    if normalized == "auto" || normalized == "direct" || normalized == "chebyshev" || normalized == "jacobi"
+        return normalized
+    end
+    error("Does not understand method $method. Supported values are auto, direct, chebyshev, jacobi (case-insensitive).")
+end
+
 struct SpinWeightedSphericalHarmonicFunction
     s::Int
     l::Int
     m::Int
     lambda
+    method::Symbol
     chebyshev_solution
 end
 
 # Implement pretty printing for SpinWeightedSphericalHarmonicFunction
 function Base.show(io::IO, ::MIME"text/plain", swsh_func::SpinWeightedSphericalHarmonicFunction)
-    print(io, "SpinWeightedSphericalHarmonicFunction(s = $(swsh_func.s), l = $(swsh_func.l), m = $(swsh_func.m), lambda = $(swsh_func.lambda))")
+    print(io, "SpinWeightedSphericalHarmonicFunction(s = $(swsh_func.s), l = $(swsh_func.l), m = $(swsh_func.m), method = $(swsh_func.method), lambda = $(swsh_func.lambda))")
 end
 
 struct SpectralDecompositionInputParams
@@ -73,19 +82,21 @@ Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at 
 By default, the method to compute the value for the underlying spin-weighted spherical harmonics 
 is chosen automatically based on the value of the harmonic index `l`.
 When `l < 30`, the direct evaluation method (`method="direct"`) is used where we evaluate the exact analytical solution as shown in Eq. (A8).
-However, the prefactor in each term of the sum can be very large and thus cause overflow, while the sum itself is finite (of order 1 actually).
-Therefore, when `l >= 30`, the Chebyshev pseudo-spectral method (`method="chebyshev"`) is used instead.
+When `l >= 30`, we use a Jacobi polynomial recurrence (`method="jacobi"`) for better high-`l` stability and speed.
+The Chebyshev pseudo-spectral method (`method="chebyshev"`) remains available as an explicit option.
+Method names are case-insensitive.
 """
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1, method="auto")
     if N == -1
         N = _determine_matrix_size_N(s, l, m)
     end
+    normalized_method = _normalize_spherical_method(method)
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
-    coefficients = spectral_coefficients(c, s, l, m, N)
+    angular, coefficients = _spectral_mode_solution(c, s, l, m, N)
     l_list = construct_all_l_in_matrix(coefficients_params.s, coefficients_params.m, coefficients_params.N)
-    spherical_harmonics_l = [ abs(coefficients[n]) >= _TOLERANCE ? spin_weighted_spherical_harmonic(s, l_list[n], m; method=method) : nothing for n in eachindex(l_list) ]
+    spherical_harmonics_l = [ abs(coefficients[n]) >= _TOLERANCE ? spin_weighted_spherical_harmonic(s, l_list[n], m; method=normalized_method) : nothing for n in eachindex(l_list) ]
     normalization = 1 # already satisfied the normalization cond. \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
-    lambda = spin_weighted_spheroidal_eigenvalue(s, l, m, c, N=N) # Not the most efficient way to do this, but it works
+    lambda = angular + c^2 - 2*m*c
 
     return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda)
 end
@@ -111,24 +122,26 @@ Return a SpinWeightedSphericalHarmonicFunction object that can be evaluated at a
 
 By default, the method to compute the value is chosen automatically based on the value of the harmonic index `l`.
 When `l < 30`, the direct evaluation method (`method="direct"`) is used where we evaluate the exact analytical solution as shown in Eq. (A8).
-However, the prefactor in each term of the sum can be very large and thus cause overflow, while the sum itself is finite (of order 1 actually).
-Therefore, when `l >= 30`, the Chebyshev pseudo-spectral method (`method="chebyshev"`) is used instead.
+When `l >= 30`, we use a Jacobi polynomial recurrence (`method="jacobi"`) for better high-`l` stability and speed.
+The Chebyshev pseudo-spectral method (`method="chebyshev"`) remains available as an explicit option.
+Method names are case-insensitive.
 """
 function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int; method="auto")
-    if method == "auto"
-        _method = l >= 30 ? "chebyshev" : "direct"
-    elseif method == "direct" || method == "chebyshev"
-        _method = method
+    normalized_method = _normalize_spherical_method(method)
+
+    if normalized_method == "auto"
+        _method = l >= 30 ? "jacobi" : "direct"
     else
-        error("Does not understand method $method")
+        _method = normalized_method
     end
 
     if _method == "direct"
-        return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m), nothing)
-    else
+        return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m), :direct, nothing)
+    elseif _method == "chebyshev"
         chebyshev_soln = _solve_spherical_harmonic_chebyshev(s, l, m)
-        return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m), chebyshev_soln)
+        return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m), :chebyshev, chebyshev_soln)
     end
+    return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m), :jacobi, nothing)
 end
 
 @doc raw"""
@@ -138,11 +151,12 @@ Compute the value of the spin-weighted spherical harmonic at the point `(theta, 
 Additionally compute the `theta_derivative`-th derivative with respect to `theta` and the `phi_derivative`-th derivative with respect to `phi` exactly.
 """
 (swsh_func::SpinWeightedSphericalHarmonicFunction)(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0) = begin
-    if isnothing(swsh_func.chebyshev_solution)
+    if swsh_func.method == :direct
         return _nth_derivative_spherical_harmonic_direct_eval(swsh_func.s, swsh_func.l, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
-    else
+    elseif swsh_func.method == :chebyshev
         return _nth_derivative_spherical_harmonic_chebyshev(swsh_func.chebyshev_solution, swsh_func.s, swsh_func.l, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
     end
+    return _nth_derivative_spherical_harmonic_jacobi(swsh_func.s, swsh_func.l, swsh_func.m, theta_derivative, phi_derivative, theta, phi)
 end
 
 @doc raw"""
