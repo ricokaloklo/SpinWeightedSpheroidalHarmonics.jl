@@ -67,8 +67,37 @@ function spin_weighted_spherical_harmonic_at_pi_over_2(s::Int, l::Int, m::Int)
     rmax = min(l-s, l+m)
 
     prefactor_sign(s, l, r) = (l-r-s) % 2 == 0 ? 1 : -1
-    two_to_the_pow_2 = ULogarithmic(BigInt(2))^(ULogarithmic(BigInt(l)))
-    _swsh_prefactor(s, l, m)*float(sum([prefactor_sign(s,l,r)*_summation_term_prefactor(s,l,m,r)/two_to_the_pow_2 for r in rmin:1:rmax]))
+    two_to_the_pow_l = ULogarithmic(BigInt(2))^(ULogarithmic(BigInt(l)))
+    _swsh_prefactor(s, l, m)*float(sum([prefactor_sign(s,l,r)*_summation_term_prefactor(s,l,m,r)/two_to_the_pow_l for r in rmin:1:rmax]))
+end
+
+function _solve_spheroidal_harmonic_chebyshev(s::Int, m::Int, c, λ, S0, Spi2, Spi)
+    # Split the domain into two parts -- one from theta = π to π/2 and from π/2 to 0
+    # NOTE x=cos(theta), x = -1 when \theta is \pi and x = 1 when \theta is 0
+
+    # Solve in the first domain
+    dom1 = -1..0
+
+    # Define the differential operator
+    x = Fun(dom1)
+    D = Derivative(dom1)
+    L = (1 - x^2) * (1 - x^2) * D^2 - 2 * x * (1 - x^2) * D + (((c * x)^2 - 2 * c * s * x + s + λ - c^2 + 2 * m * c) * (1 - x^2) - (m + s * x)^2)
+
+    rhs_zero = zero(S0 + Spi2 + Spi)
+    bvals = [Spi, Spi2] # Boundary values
+    u = [Dirichlet(dom1); L] \ [bvals, rhs_zero]
+
+    # Solve in the second domain
+    dom2 = 0..1
+    x = Fun(dom2)
+    D = Derivative(dom2)
+    L = (1 - x^2) * (1 - x^2) * D^2 - 2 * x * (1 - x^2) * D + (((c * x)^2 - 2 * c * s * x + s + λ - c^2 + 2 * m * c) * (1 - x^2) - (m + s * x)^2)
+
+    bvals = [Spi2, S0] # Boundary values
+    v = [Dirichlet(dom2); L] \ [bvals, rhs_zero]
+
+    S(θ) = θ > π / 2 ? u(cos(θ)) : v(cos(θ))
+    return S
 end
 
 function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
@@ -79,35 +108,14 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     # Evaluate sYlm(\pi,0) exactly
     Ypi = m == s ? (-1)^l * sqrt((2*l+1)/(4π)) : 0.0
 
-    # Split the domain into two parts -- one from theta = π to π/2 and from π/2 to 0
-    # NOTE x=cos(theta), x = -1 when \theta is \pi and x = 1 when \theta is 0
-
-    # Solve in the first domain
-    dom1 = -1..0
-
-    # Define the differential operator
-    x = Fun(dom1)
-    D = Derivative(dom1)
-    L = (1 - x^2)*(1 - x^2)*D^2 - 2*x*(1 - x^2)*D + ((s + l*(l+1) - s*(s+1))*(1 - x^2) - (m + s*x)^2)
-
-    bvals = [Ypi, Ypi2] # Boundary values
-    u = [Dirichlet(dom1); L] \ [bvals, 0]
-
-    # Solve in the second domain
-    dom2 = 0..1
-    x = Fun(dom2)
-    D = Derivative(dom2)
-    L = (1 - x^2)*(1 - x^2)*D^2 - 2*x*(1 - x^2)*D + ((s + l*(l+1) - s*(s+1))*(1 - x^2) - (m + s*x)^2)
-
-    bvals = [Ypi2, Y0] # Boundary values
-    v = [Dirichlet(dom2); L] \ [bvals, 0]
-
-    Y(θ) = θ > π/2 ? u(cos(θ)) : v(cos(θ))
-    return Y
+    return _solve_spheroidal_harmonic_chebyshev(s, m, 0.0, spin_weighted_spherical_eigenvalue(s, l, m), Y0, Ypi2, Ypi)
 end
 
-function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, s::Int, l::Int, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
-    # Find the proper _theta in [0, π] and _phi in [0, 2π) to evaluate
+function _nth_derivative_spheroidal_harmonic_chebyshev(chebyshev_S::Fun, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+    theta_derivative < 0 && error("theta_derivative must be non-negative")
+    phi_derivative < 0 && error("phi_derivative must be non-negative")
+
+    # Find the proper _theta in [0, π] and _phi in [0, 2π) to evaluate.
     _theta = mod(theta, 2π)
     _phi = phi
     _theta = _theta < 0 ? _theta + 2π : _theta
@@ -116,15 +124,14 @@ function _nth_derivative_spherical_harmonic_chebyshev(chebyshev_Y::Function, s::
         _phi += π
     end
 
-    Y_fun = Fun(chebyshev_Y, 0..π)
+    # Note that the derivatives at the two boundary points might be inaccurate
+    S_deriv = theta_derivative == 0 ? chebyshev_S(_theta) : differentiate(chebyshev_S, theta_derivative)(_theta)
+    return S_deriv * cis(m * _phi) * (m * 1im)^phi_derivative
+end
 
-    # Revert back to direct evaluation method for the two boundary points
-    if isapprox(_theta, 0.0; atol=1e-3) || isapprox(_theta, π; atol=1e-3)
-        return _nth_derivative_spherical_harmonic_direct_eval(s, l, m, theta_derivative, phi_derivative, _theta, _phi)
-    end
-    # Compute the theta derivative for interior points using ApproxFun
-    Y_deriv = theta_derivative == 0 ? Y_fun(_theta) : differentiate(Y_fun, theta_derivative)(_theta)
-    return Y_deriv * cis(m*_phi) * (m*1im)^phi_derivative
+function _nth_derivative_spheroidal_harmonic_chebyshev(chebyshev_S::Function, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+    S_fun = Fun(chebyshev_S, 0..π)
+    return _nth_derivative_spheroidal_harmonic_chebyshev(S_fun, m, theta_derivative, phi_derivative, theta, phi)
 end
 
 function _jacobi_polynomial_recurrence(n::Int, α::Int, β::Int, x::Real)
