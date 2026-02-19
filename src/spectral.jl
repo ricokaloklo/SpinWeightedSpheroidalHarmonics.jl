@@ -77,42 +77,53 @@ function construct_spectral_matrix(c, s::Int, m::Int, N::Int)
     spectral_matrix = Array(Symmetric(spectral_matrix))
 end
 
-function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=-1)
-    if c == 0
-        # Return the Schwarzschild eigenvalue explicitly
-        return eigenvalue_Schwarzschild(s, l)
+function _ell_index_in_matrix(s::Int, l::Int, m::Int, N::Int)
+    lmin = max(abs(m), abs(s))
+    idx = l - lmin + 1
+    if idx < 1 || idx > N
+        error("Target l=$l is outside the spectral matrix range for N=$N")
     end
-
-    if N == -1
-        N = _determine_matrix_size_N(s, l, m)
-    end
-
-    all_l_in_matrix = construct_all_l_in_matrix(s, m, N)
-    spectral_matrix = construct_spectral_matrix(c, s, m, N)
-
-    # Solve the eigenvalue problem
-    eigenvalues = eigvals(spectral_matrix)
-    # The returned eigenvalues are already sorted in ascending order
-    eigenvalues[indexin(l, all_l_in_matrix)[1]]
+    return idx
 end
 
-function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1)
+function _spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1)
     if N == -1
         N = _determine_matrix_size_N(s, l, m)
     end
 
-    all_l_in_matrix = construct_all_l_in_matrix(s, m, N)
-    spectral_matrix = construct_spectral_matrix(c, s, m, N)
+    idx = _ell_index_in_matrix(s, l, m, N)
 
-    # Solve the eigenvalue problem
-    eigenvectors = eigvecs(spectral_matrix)
-    # The returned eigenvectors are already normalized
-    v = eigenvectors[:,indexin(l, all_l_in_matrix)[1]]
-    # Note that the eigenvectors are determined only up to a multiplicative factor
-    # Make sure that when l'=l, it is a positive real number
-    v /= v[indexin(l, all_l_in_matrix)[1]]
-    # Re-normalize the vector
-    return v/sqrt(dot(v,v))
+    if c == 0
+        # In the spherical limit, the decomposition is exactly a Kronecker delta.
+        coeffs = zeros(ComplexF64, N)
+        coeffs[idx] = 1.0 + 0.0im
+        return eigenvalue_Schwarzschild(s, l), coeffs
+    end
+
+    spectral_matrix = construct_spectral_matrix(c, s, m, N)
+    decomposition = eigen(spectral_matrix)
+    angular_sep = decomposition.values[idx]
+    v = decomposition.vectors[:, idx]
+
+    # Fix an overall phase convention and normalize.
+    pivot = v[idx]
+    if pivot != 0
+        v /= pivot
+    end
+    coeffs = v / sqrt(dot(v, v))
+    return angular_sep, coeffs
+end
+
+# For backwards compatibility, we can still export the old function names that call the new internal function.
+function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=-1)
+    angular_sep, _ = _spectral_decomposition(c, s, l, m, N)
+    return angular_sep
+end
+
+# For backwards compatibility, we can still export the old function names that call the new internal function.
+function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1)
+    _, coeffs = _spectral_decomposition(c, s, l, m, N)
+    return coeffs
 end
 
 function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=-1)
