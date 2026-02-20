@@ -114,13 +114,13 @@ function _spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1)
     return angular_sep, coeffs
 end
 
-# For backwards compatibility, we can still export the old function names that call the new internal function.
+# For backward compatibility, we can still export the old function names that call the new internal function.
 function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=-1)
     angular_sep, _ = _spectral_decomposition(c, s, l, m, N)
     return angular_sep
 end
 
-# For backwards compatibility, we can still export the old function names that call the new internal function.
+# For backward compatibility, we can still export the old function names that call the new internal function.
 function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1)
     _, coeffs = _spectral_decomposition(c, s, l, m, N)
     return coeffs
