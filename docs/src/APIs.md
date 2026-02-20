@@ -63,6 +63,7 @@ This is a composite struct type that stores the output from [`spin_weighted_sphe
 | `coeffs` | spectral decomposition coefficients |
 | `spherical_harmonics_l` | an array of [SpinWeightedSphericalHarmonicFunction](@ref) used in the spectral decomposition |
 | `normalization_const` | normalization constant to be *divided* to ensure the normalization convention is satisfied |
+| `method` | the method used to solve for the harmonic |
 | `lambda` | spin-weighted spheroidal eigenvalue $\lambda$ |
 
 #### SpinWeightedSphericalHarmonicFunction
@@ -79,4 +80,5 @@ This is a composite struct type that stores information about a spin-weighted sp
 | `l` | harmonic index $\ell$ |
 | `m` | azimuthal index $m$ |
 | `lambda` | spin-weighted spherical eigenvalue $\lambda$ |
+| `method` | the method used to solve for the harmonic |
 | `chebyshev_solution` | numerical solution expressed in Chebyshev polynomials |
