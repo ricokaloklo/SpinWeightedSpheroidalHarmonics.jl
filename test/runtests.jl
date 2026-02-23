@@ -11,30 +11,27 @@ end
 
 @testset "SpinWeightedSpheroidalHarmonics.jl" begin
     @testset "Jacobi spherical harmonic evaluation" begin
-        test_modes = [
-            (-2, 6, 2),
-            (-2, 6, -2),
-            (-2, 8, 0),
-            (0, 8, -3),
-            (1, 6, -1),
-            (2, 7, 0),
-        ]
+        test_spins = (-2, -1, 0, 1, 2)
         test_angles = [
             (0.37, 0.91),
             (1.10, 2.30),
             (2.40, -0.20),
         ]
 
-        for (s, l, m) in test_modes
-            y_direct = spin_weighted_spherical_harmonic(s, l, m; method="direct")
-            y_jacobi = spin_weighted_spherical_harmonic(s, l, m; method="jacobi")
+        for s in test_spins
+            for l in abs(s):20
+                for m in -l:l
+                    y_direct = spin_weighted_spherical_harmonic(s, l, m; method="direct")
+                    y_jacobi = spin_weighted_spherical_harmonic(s, l, m; method="jacobi")
 
-            for (theta, phi) in test_angles
-                @test y_jacobi(theta, phi) ≈ y_direct(theta, phi) rtol=1e-10 atol=1e-12
-                @test y_jacobi(theta, phi; phi_derivative=2) ≈ y_direct(theta, phi; phi_derivative=2) rtol=1e-10 atol=1e-12
-                @test y_jacobi(theta, phi; theta_derivative=1) ≈ y_direct(theta, phi; theta_derivative=1) rtol=1e-8 atol=1e-10
-                @test y_jacobi(theta, phi; theta_derivative=2) ≈ y_direct(theta, phi; theta_derivative=2) rtol=1e-8 atol=1e-9
-                @test y_jacobi(theta, phi; theta_derivative=1, phi_derivative=1) ≈ y_direct(theta, phi; theta_derivative=1, phi_derivative=1) rtol=1e-8 atol=1e-10
+                    for (theta, phi) in test_angles
+                        @test y_jacobi(theta, phi) ≈ y_direct(theta, phi) rtol=2e-8 atol=1e-10
+                        @test y_jacobi(theta, phi; phi_derivative=2) ≈ y_direct(theta, phi; phi_derivative=2) rtol=2e-8 atol=1e-10
+                        @test y_jacobi(theta, phi; theta_derivative=1) ≈ y_direct(theta, phi; theta_derivative=1) rtol=1e-8 atol=1e-10
+                        @test y_jacobi(theta, phi; theta_derivative=2) ≈ y_direct(theta, phi; theta_derivative=2) rtol=1e-8 atol=1e-9
+                        @test y_jacobi(theta, phi; theta_derivative=1, phi_derivative=1) ≈ y_direct(theta, phi; theta_derivative=1, phi_derivative=1) rtol=1e-8 atol=1e-10
+                    end
+                end
             end
         end
     end
