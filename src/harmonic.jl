@@ -111,11 +111,9 @@ function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
     return _solve_spheroidal_harmonic_chebyshev(s, m, 0.0, spin_weighted_spherical_eigenvalue(s, l, m), Y0, Ypi2, Ypi)
 end
 
-function _nth_derivative_spheroidal_harmonic_chebyshev(chebyshev_S::Fun, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
-    theta_derivative < 0 && error("theta_derivative must be non-negative")
-    phi_derivative < 0 && error("phi_derivative must be non-negative")
-
-    # Find the proper _theta in [0, π] and _phi in [0, 2π) to evaluate.
+# Find the proper _theta in [0, π] and _phi to evaluate at, using the symmetry
+# (theta, phi) -> (2π - theta, phi + π) of the harmonics.
+function _fold_theta_phi(theta, phi)
     _theta = mod(theta, 2π)
     _phi = phi
     _theta = _theta < 0 ? _theta + 2π : _theta
@@ -123,6 +121,14 @@ function _nth_derivative_spheroidal_harmonic_chebyshev(chebyshev_S::Fun, m::Int,
         _theta = 2π - _theta
         _phi += π
     end
+    return _theta, _phi
+end
+
+function _nth_derivative_spheroidal_harmonic_chebyshev(chebyshev_S::Fun, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
+    theta_derivative < 0 && error("theta_derivative must be non-negative")
+    phi_derivative < 0 && error("phi_derivative must be non-negative")
+
+    _theta, _phi = _fold_theta_phi(theta, phi)
 
     # Note that the derivatives at the two boundary points might be inaccurate
     S_deriv = theta_derivative == 0 ? chebyshev_S(_theta) : differentiate(chebyshev_S, theta_derivative)(_theta)

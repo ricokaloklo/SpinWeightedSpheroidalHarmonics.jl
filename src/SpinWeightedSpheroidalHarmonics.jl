@@ -4,6 +4,7 @@ using LinearAlgebra
 
 include("harmonic.jl")
 include("spectral.jl")
+include("leaver.jl")
 
 export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue, spin_weighted_spherical_eigenvalue # Expose these functions to the user
 export Teukolsky_lambda_const # For backward compatbility
@@ -12,10 +13,10 @@ _TOLERANCE = 1e-16 # Spherical harmonics smaller than this will be ignored in th
 
 function _format_method_name(method)
     normalized = lowercase(strip(String(method)))
-    if normalized == "auto" || normalized == "direct" || normalized == "chebyshev" || normalized == "jacobi"
+    if normalized == "auto" || normalized == "direct" || normalized == "chebyshev" || normalized == "jacobi" || normalized == "leaver"
         return normalized
     end
-    error("Does not understand method $method. Supported values are auto, direct, chebyshev, jacobi (case-insensitive).")
+    error("Does not understand method $method. Supported values are auto, direct, chebyshev, jacobi, leaver (case-insensitive).")
 end
 
 struct SpinWeightedSphericalHarmonicFunction
@@ -34,7 +35,7 @@ end
 
 struct SpectralDecompositionInputParams
     s::Int
-    l::Int
+    l # Not restricted to an Int: the leaver method accepts any (even complex) harmonic index
     m::Int
     c
     N::Int
@@ -48,6 +49,7 @@ struct SpinWeightedSpheroidalHarmonicFunction
     lambda
     method::Symbol
     chebyshev_solution
+    leaver_solution
 end
 
 # Implement pretty printing for SpinWeightedSpheroidalHarmonicFunction
@@ -96,29 +98,85 @@ function _spheroidal_boundary_values(coefficients_params, coefficients)
     return S0, Spi2, Spi
 end
 
+#=
+The spectral decomposition needs an integer harmonic index, while the leaver
+method does not. Resolve "auto" accordingly and reject the combinations that
+cannot work.
+=#
+function _resolve_spheroidal_method(method, l)
+    method = _format_method_name(method)
+    if !(l isa Integer)
+        if method == "auto"
+            return "leaver"
+        elseif method != "leaver"
+            error("A non-integer harmonic index l=$l is only supported by method=\"leaver\", not by method=\"$method\".")
+        end
+    end
+    return method
+end
+
 @doc raw"""
-    spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1, method="auto")
+    spin_weighted_spheroidal_harmonic(s::Int, l, m::Int, c; N::Int=-1, method="auto", branch_n=nothing, lambda=nothing, lambda0=nothing, cf_depth::Int=-1, tol=-1, max_iter::Int=80)
 
-Construct the spectral decomposition of this spin-weighted spheroidal harmonic of 
-spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$) 
-using `N` spin-weighted *spherical* harmonics.
-
-Note that the default value for `N=-1` indicates that a suitable value of `N`
-will be determined automatically.
+Construct the spin-weighted spheroidal harmonic of
+spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$).
 
 Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at any point.
 
-The `method` argument controls how the harmonic is evaluated:
-- `"auto"`: use spectral decomposition with automatic spherical-harmonic backend selection,
-- `"direct"` or `"jacobi"`: use spectral decomposition with that spherical-harmonic backend,
-- `"chebyshev"`: solve the spheroidal ODE directly with Chebyshev pseudo-spectral collocation.
+The `method` argument controls how the harmonic is computed:
+- `"auto"`: spectral decomposition with automatic spherical-harmonic backend selection when `l` is an integer, and `"leaver"` otherwise,
+- `"direct"` or `"jacobi"`: spectral decomposition with that spherical-harmonic backend,
+- `"chebyshev"`: solve the spheroidal ODE directly with Chebyshev pseudo-spectral collocation,
+- `"leaver"`: Leaver's continued-fraction method.
 Method names are case-insensitive.
+
+For the spectral decomposition, `N` is the number of spin-weighted *spherical* harmonics used,
+while for `"leaver"` it is the number of terms kept in the power series. In either case the
+default value `N=-1` indicates that a suitable value of `N` will be determined automatically.
+
+Only `"leaver"` accepts a harmonic index `l` that is not an integer, including a complex one.
+Beware that the continued fraction still has a discrete spectrum, so a non-integer `l` does not
+by itself produce a new eigenvalue: `l` enters only through the initial guess
+$l(l+1) - s(s+1)$ that the solver is continued from at `c = 0`, and a non-integer `l` therefore
+returns whichever neighboring integer mode that guess falls closest to. For analytic continuation,
+supply the eigenvalue with `lambda`, or start the solver away from that guess with `lambda0`.
+
+The remaining keyword arguments are specific to `"leaver"` as well. `branch_n` (counted from `0`
+for the lowest mode `l = max(|s|, |m|)`, and by default `l` rounded to the nearest mode) chooses
+which inversion of the continued fraction is used; all of them have the same roots, but the
+inversion belonging to the mode is the best conditioned one. `cf_depth` sets the depth at which
+the continued fraction is truncated, and `tol` and `max_iter` control its Newton iteration; both
+`cf_depth=-1` and `tol=-1` pick a suitable value automatically, the latter following the
+floating-point precision of `c`.
+
+Note that `"leaver"` fixes the overall phase by making the overlap with ${}_s Y_{lm}$ real and
+positive, matching the convention of the spectral decomposition. This is impossible for a
+non-integer `l`, where the phase convention is instead that of a unit leading series coefficient.
+
+Two things limit `"leaver"` in a given floating-point precision, and it raises an error rather
+than return a result it cannot resolve in either case. Roundoff in the continued fraction limits
+how sharply the eigenvalue is located, increasingly so as `|c|` grows, and cancellation between
+the (large, alternating) power-series coefficients limits the accuracy of the harmonic itself,
+increasingly so as `l` grows. Both are cured by a wider floating-point precision, which the whole
+method supports — pass, say, `big(c)`. The spectral decomposition suffers from neither.
 """
-function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1, method="auto")
+function spin_weighted_spheroidal_harmonic(s::Int, l, m::Int, c; N::Int=-1, method="auto",
+    branch_n::Union{Nothing, Int}=nothing, lambda=nothing, lambda0=nothing, cf_depth::Int=-1, tol=-1, max_iter::Int=80)
+
+    method = _resolve_spheroidal_method(method, l)
+
+    if method == "leaver"
+        branch = isnothing(branch_n) ? _leaver_branch_index(s, m, l) : branch_n
+        lambda = isnothing(lambda) ? _leaver_eigenvalue(s, l, m, c; branch_n=branch, lambda0=lambda0, cf_depth=cf_depth, tol=tol, max_iter=max_iter) : lambda
+        leaver_solution = _leaver_angular_solution(s, m, c, lambda; branch_n=branch, nmax=N)
+        normalization = _leaver_normalization_const(leaver_solution, s, l, m)
+        coefficients_params = SpectralDecompositionInputParams(s, l, m, c, length(leaver_solution.coeffs))
+        return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, leaver_solution.coeffs, Vector{Union{SpinWeightedSphericalHarmonicFunction, Nothing}}(), normalization, lambda, :leaver, nothing, leaver_solution)
+    end
+
     if N == -1
         N = _determine_matrix_size_N(s, l, m)
     end
-    method = _format_method_name(method)
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     angular_sep, coefficients = _spectral_decomposition(c, s, l, m, N)
     normalization = 1 # already satisfied the normalization cond. \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
@@ -130,10 +188,10 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1,
         chebyshev_solution = Fun(_solve_spheroidal_harmonic_chebyshev(s, m, c, lambda, S0, Spi2, Spi), 0..π)
         spherical_harmonics_l = Vector{Union{SpinWeightedSphericalHarmonicFunction, Nothing}}(undef, length(l_list))
         fill!(spherical_harmonics_l, nothing)
-        return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda, :chebyshev, chebyshev_solution)
-    elseif method != "chebyshev"
+        return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda, :chebyshev, chebyshev_solution, nothing)
+    else
         spherical_harmonics_l = [ abs(coefficients[n]) >= _TOLERANCE ? spin_weighted_spherical_harmonic(s, l_list[n], m; method=method) : nothing for n in eachindex(l_list) ]
-        return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda, :spectral, nothing)
+        return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda, :spectral, nothing, nothing)
     end
 end
 
@@ -149,6 +207,10 @@ Additionally compute the `theta_derivative`-th derivative with respect to `theta
         return _unnormalized_spin_weighted_spheroidal_harmonic(swsh_func.params, swsh_func.coeffs, swsh_func.spherical_harmonics_l, theta, phi; theta_derivative=theta_derivative, phi_derivative=phi_derivative) / swsh_func.normalization_const
     elseif swsh_func.method == :chebyshev
         return _nth_derivative_spheroidal_harmonic_chebyshev(swsh_func.chebyshev_solution, swsh_func.params.m, theta_derivative, phi_derivative, theta, phi) / swsh_func.normalization_const
+    elseif swsh_func.method == :leaver
+        return _nth_derivative_spheroidal_harmonic_leaver(swsh_func.leaver_solution, swsh_func.params.m, theta_derivative, phi_derivative, theta, phi) / swsh_func.normalization_const
+    else
+        error("Unknown method $(swsh_func.method) for evaluating spin-weighted spheroidal harmonic.")
     end
 end
 
@@ -179,6 +241,8 @@ function spin_weighted_spherical_harmonic(s::Int, l::Int, m::Int; method="auto")
         return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m), :chebyshev, chebyshev_soln)
     elseif method == "jacobi"
         return SpinWeightedSphericalHarmonicFunction(s, l, m, spin_weighted_spherical_eigenvalue(s, l, m), :jacobi, nothing)
+    else
+        error("Method $method is not available for spin-weighted spherical harmonics. Supported values are auto, direct, chebyshev, jacobi (case-insensitive).")
     end
 end
 
@@ -201,7 +265,7 @@ Additionally compute the `theta_derivative`-th derivative with respect to `theta
 end
 
 @doc raw"""
-    spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=-1)
+    spin_weighted_spheroidal_eigenvalue(s::Int, l, m::Int, c; N::Int=-1, method="auto", branch_n=nothing, lambda0=nothing, cf_depth::Int=-1, tol=-1, max_iter::Int=80)
 
 Compute the eigenvalue of the spin-weighted spheroidal harmonic
 with spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$).
@@ -209,9 +273,22 @@ with spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity
 The optional argument `N` specifies the number of terms to use in the spectral decomposition.
 The default value is `N=-1`, which indicates that a suitable value of `N` will be determined automatically.
 
-This function is simply a wrapper to `Teukolsky_lambda_const` for backward compatibility.
+With `method="leaver"`, the eigenvalue is instead obtained from Leaver's continued fraction,
+which does not require the harmonic index `l` to be an integer. See
+[`spin_weighted_spheroidal_harmonic`](@ref) for the meaning of `branch_n`, `lambda0`, `cf_depth`,
+`tol` and `max_iter`, which are all specific to that method. When `l` is not an integer,
+`method="auto"` selects `"leaver"`; otherwise it selects the spectral decomposition.
+
+For the spectral decomposition this function is simply a wrapper to `Teukolsky_lambda_const`
+for backward compatibility.
 """
-function spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=-1)
+function spin_weighted_spheroidal_eigenvalue(s::Int, l, m::Int, c; N::Int=-1, method="auto",
+    branch_n::Union{Nothing, Int}=nothing, lambda0=nothing, cf_depth::Int=-1, tol=-1, max_iter::Int=80)
+
+    if _resolve_spheroidal_method(method, l) == "leaver"
+        return _leaver_eigenvalue(s, l, m, c; branch_n=branch_n, lambda0=lambda0, cf_depth=cf_depth, tol=tol, max_iter=max_iter)
+    end
+
     if N == -1
         N = _determine_matrix_size_N(s, l, m)
     end
