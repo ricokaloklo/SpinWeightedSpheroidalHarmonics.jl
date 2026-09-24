@@ -1,15 +1,39 @@
 # APIs
 
-There are 4 functions that are exported, namely
+The main functions are
 - [`spin_weighted_spheroidal_eigenvalue`](@ref)
 - [`spin_weighted_spheroidal_harmonic`](@ref)
 - [`spin_weighted_spherical_eigenvalue`](@ref)
 - [`spin_weighted_spherical_harmonic`](@ref)
 
-and there are 3 custom types that are exported, i.e.
+and their return types use
 - [SpectralDecompositionInputParams](@ref)
 - [SpinWeightedSpheroidalHarmonicFunction](@ref)
 - [SpinWeightedSphericalHarmonicFunction](@ref)
+
+## Complex frequencies
+
+```julia
+c = 1.0 - 4.0im
+lambda = spin_weighted_spheroidal_eigenvalue(-2, 2, 2, c)
+S = spin_weighted_spheroidal_harmonic(-2, 2, 2, c)
+S(1.1, 0.3)
+S(1.1, 0.3; theta_derivative=1)
+```
+
+To follow a mode along an ordered path, pass the complex points to
+`track_angular_mode`. The returned `states` include intermediate points.
+
+```julia
+path = [0.0, 0.5 - 2.0im, 1.0 - 4.0im]
+result = track_angular_mode(-2, 2, 2, path)
+pair = last(result.states)
+lambda = pair.lambda
+S = spin_weighted_spheroidal_harmonic(pair)
+```
+
+Use `backend=:dense_reference` with `spin_weighted_spheroidal_harmonic` or
+`track_angular_mode` to compare with the default backend along the same path.
 
 ## Functions
 ```@docs

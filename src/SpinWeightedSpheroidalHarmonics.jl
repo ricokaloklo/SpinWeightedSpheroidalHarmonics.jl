@@ -18,9 +18,7 @@ _TOLERANCE = 1e-16 # Spherical harmonics smaller than this will be ignored in th
 
 function _format_method_name(method)
     normalized = lowercase(strip(String(method)))
-    if normalized == "auto" || normalized == "direct" || normalized == "chebyshev" || normalized == "jacobi"
-        return normalized
-    end
+    normalized in ("auto", "direct", "chebyshev", "jacobi") && return normalized
     error("Does not understand method $method. Supported values are auto, direct, chebyshev, jacobi (case-insensitive).")
 end
 
@@ -114,34 +112,24 @@ will be determined automatically.
 
 Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at any point.
 
-The `method` argument controls how the harmonic is evaluated:
-- `"auto"`: use spectral decomposition with automatic spherical-harmonic backend selection,
-- `"direct"` or `"jacobi"`: use spectral decomposition with that spherical-harmonic backend,
-- `"chebyshev"`: solve the spheroidal ODE directly with Chebyshev pseudo-spectral collocation.
-Method names are case-insensitive.
+The `method` options are `"auto"` (default), `"direct"`, `"jacobi"`, and
+`"chebyshev"`. Method names are case-insensitive.
 
-For real `c`, `backend="auto"` uses the selected banded eigenpair solver and
-avoids a full dense eigendecomposition. Set `backend="dense_reference"` for a
-direct regression against the previous implementation.
+The `backend` options are `"auto"` (default), `"fast_selected"`, and
+`"dense_reference"`. For an ordered complex path, use `track_angular_mode`
+and pass a returned eigenpair to `spin_weighted_spheroidal_harmonic`.
 """
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
         N::Int=-1, method="auto", backend="auto")
     selected_backend = _spectral_backend(backend)
-    adaptive_pair = nothing
-    if c isa Complex && !iszero(imag(c))
-        if selected_backend == :dense_reference
-            N == -1 && (N = _determine_matrix_size_N(s, l, m))
-        else
-            pair = continue_angular_mode(
-                s, l, m, c;
-                truncation_order=N == -1 ? SWSH_DEFAULT_ANGULAR_ORDER :
-                    N - (l - max(abs(m), abs(s)) + 1))
-            return spin_weighted_spheroidal_harmonic(pair; method)
-        end
+    if c isa Complex && !iszero(imag(c)) && selected_backend != :dense_reference
+        pair = continue_angular_mode(
+            s, l, m, c; truncation_order=_complex_truncation_order(s, l, m, N))
+        return spin_weighted_spheroidal_harmonic(pair; method)
     end
+    adaptive_pair = nothing
     if N == -1
-        if selected_backend != :dense_reference &&
-                (c isa Real || (c isa Complex && iszero(imag(c))))
+        if selected_backend != :dense_reference && isreal(c)
             adaptive_pair = _adaptive_real_eigenpair(real(c), s, l, m)
             N = adaptive_pair.size
         else
@@ -173,7 +161,6 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
     end
 end
 
-# The power of multiple dispatch
 @doc raw"""
     SpinWeightedSpheroidalHarmonicFunction(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
 

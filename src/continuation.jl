@@ -14,6 +14,7 @@ struct AngularCacheKey{T<:AbstractFloat}
     sheet_id::Symbol
     precision_bits::Int
     truncation_order::Int
+    backend::Symbol
 end
 
 struct AngularEigenpair{T<:AbstractFloat}
@@ -294,11 +295,9 @@ function _corrected_angular_candidate(
             jacobian[index, size + 1] = -coefficients[index]
             jacobian[size + 1, index] = conj(reference[index])
         end
-        correction = try
-            jacobian \ (-vcat(residual_vector, normalization_error))
-        catch
-            return nothing
-        end
+        factorization = lu(jacobian; check=false)
+        issuccess(factorization) || return nothing
+        correction = factorization \ (-vcat(residual_vector, normalization_error))
         all(isfinite, correction) || return nothing
         coefficients .+= view(correction, 1:size)
         value += correction[size + 1]
@@ -311,7 +310,7 @@ function _corrected_angular_candidate(
     residual = _relative_eigen_residual(
         matrix, angular_sep, coefficients)
     condition = _complex_symmetric_eigenvector_condition(coefficients)
-    finite = isfinite(real(lambda)) && isfinite(imag(lambda)) &&
+    finite = isfinite(lambda) &&
         isfinite(residual) && isfinite(overlap) && isfinite(condition)
     finite || return nothing
     status = condition >= sqrt(SWSH_DEFAULT_EP_CONDITION_LIMIT) ?
@@ -329,19 +328,12 @@ end
     overlap_margin_min::Float64,
     residual_tol::Float64,
 )
-    finite = isfinite(real(candidate.lambda)) &&
-        isfinite(imag(candidate.lambda)) &&
-        isfinite(candidate.residual) &&
-        isfinite(candidate.previous_overlap)
-    finite || return false
-    candidate.residual <= residual_tol || return false
-    candidate.previous_overlap >= overlap_min || return false
-    candidate.eigenvector_condition <=
-        SWSH_DEFAULT_EP_CONDITION_LIMIT || return false
-    if candidate.spectral_gap <= sqrt(eps(Float64))
-        candidate.overlap_margin >= overlap_margin_min || return false
-    end
-    return true
+    return all(isfinite, (candidate.lambda, candidate.residual, candidate.previous_overlap)) &&
+        candidate.residual <= residual_tol &&
+        candidate.previous_overlap >= overlap_min &&
+        candidate.eigenvector_condition <= SWSH_DEFAULT_EP_CONDITION_LIMIT &&
+        (candidate.spectral_gap > sqrt(eps(Float64)) ||
+            candidate.overlap_margin >= overlap_margin_min)
 end
 
 function _advance_angular_segment!(
@@ -352,30 +344,27 @@ function _advance_angular_segment!(
     overlap_margin_min::Float64,
     residual_tol::Float64,
     min_step::Float64,
+    backend::Symbol,
     depth::Int=0,
     max_depth::Int=64,
 )
     target == previous.c && return previous
-    value_seed, coefficient_seed = _angular_predictor(
-        states, previous, target)
-    corrected = _corrected_angular_candidate(
-        previous, target, value_seed, coefficient_seed)
-    candidate = corrected === nothing ?
-        _angular_candidate(previous, target) : corrected
+    if backend != :dense_reference
+        value_seed, coefficient_seed = _angular_predictor(
+            states, previous, target)
+        corrected = _corrected_angular_candidate(
+            previous, target, value_seed, coefficient_seed)
+        if corrected !== nothing && _angular_candidate_accepted(corrected;
+                overlap_min, overlap_margin_min, residual_tol)
+            push!(states, corrected)
+            return corrected
+        end
+    end
+    candidate = _angular_candidate(previous, target)
     if _angular_candidate_accepted(candidate;
             overlap_min, overlap_margin_min, residual_tol)
         push!(states, candidate)
         return candidate
-    end
-
-    if corrected !== nothing
-        indexed_candidate = _angular_candidate(previous, target)
-        if _angular_candidate_accepted(indexed_candidate;
-                overlap_min, overlap_margin_min, residual_tol)
-            push!(states, indexed_candidate)
-            return indexed_candidate
-        end
-        candidate = indexed_candidate
     end
 
     step = abs(target - previous.c)
@@ -392,11 +381,11 @@ function _advance_angular_segment!(
     midpoint = previous.c + (target - previous.c) / 2
     middle = _advance_angular_segment!(
         states, previous, midpoint;
-        overlap_min, overlap_margin_min, residual_tol, min_step,
+        overlap_min, overlap_margin_min, residual_tol, min_step, backend,
         depth=depth + 1, max_depth)
     return _advance_angular_segment!(
         states, middle, target;
-        overlap_min, overlap_margin_min, residual_tol, min_step,
+        overlap_min, overlap_margin_min, residual_tol, min_step, backend,
         depth=depth + 1, max_depth)
 end
 
@@ -405,6 +394,7 @@ function track_angular_mode(
     l::Int,
     m::Int,
     requested_path;
+    backend=:auto,
     sheet_id::Symbol=:principal,
     truncation_order::Int=SWSH_DEFAULT_ANGULAR_ORDER,
     max_step::Real=SWSH_DEFAULT_MAX_PATH_STEP,
@@ -413,6 +403,7 @@ function track_angular_mode(
     overlap_margin_min::Real=SWSH_DEFAULT_OVERLAP_MARGIN_MIN,
     residual_tol::Real=SWSH_DEFAULT_RESIDUAL_TOL,
 )
+    selected_backend = _spectral_backend(backend)
     path = ComplexF64.(collect(requested_path))
     isempty(path) && throw(ArgumentError("requested_path must not be empty."))
     first(path) == 0 || pushfirst!(path, 0.0 + 0.0im)
@@ -432,7 +423,7 @@ function track_angular_mode(
                 overlap_min=Float64(overlap_min),
                 overlap_margin_min=Float64(overlap_margin_min),
                 residual_tol=Float64(residual_tol),
-                min_step=Float64(min_step))
+                min_step=Float64(min_step), backend=selected_backend)
         end
     end
 
@@ -464,15 +455,17 @@ function continue_angular_mode(
     l::Int,
     m::Int,
     c;
+    backend=:auto,
     sheet_id::Symbol=:straight_from_spherical,
     truncation_order::Int=SWSH_DEFAULT_ANGULAR_ORDER,
     cache::Union{AngularCache,Nothing}=DEFAULT_ANGULAR_CACHE,
     kwargs...,
 )
     _require_binary64_angular_input(c)
+    selected_backend = _spectral_backend(backend)
     c64 = ComplexF64(c)
     key = AngularCacheKey(
-        s, l, m, c64, sheet_id, 53, truncation_order)
+        s, l, m, c64, sheet_id, 53, truncation_order, selected_backend)
     if cache !== nothing
         cached = _angular_cache_get(cache, key)
         cached === nothing || return cached
@@ -484,7 +477,7 @@ function continue_angular_mode(
     ]
     result = track_angular_mode(
         s, l, m, path;
-        sheet_id, truncation_order, kwargs...)
+        sheet_id, truncation_order, backend=selected_backend, kwargs...)
     pair = last(result.states)
     return cache === nothing ? pair : _angular_cache_put!(cache, key, pair)
 end

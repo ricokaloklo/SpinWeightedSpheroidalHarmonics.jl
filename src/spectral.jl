@@ -359,6 +359,13 @@ function _spectral_backend(backend)
 end
 
 function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int)
+    if c isa Complex && !iszero(imag(c))
+        # Complex eigenvalue ordering does not preserve the spherical mode label.
+        pair = continue_angular_mode(
+            s, l, m, float(c); backend=:dense_reference,
+            truncation_order=_complex_truncation_order(s, l, m, N))
+        return pair.angular_sep, pair.coefficients
+    end
     idx = _ell_index_in_matrix(s, l, m, N)
     if c == 0
         coefficients = zeros(ComplexF64, N)
@@ -378,26 +385,19 @@ end
 function _spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1;
         backend=:auto)
     selected_backend = _spectral_backend(backend)
-    if N == -1
-        if selected_backend != :dense_reference &&
-                (c isa Real || (c isa Complex && iszero(imag(c))))
+    if selected_backend != :dense_reference && isreal(c)
+        lambda, coefficients = if N == -1
             pair = _adaptive_real_eigenpair(real(c), s, l, m)
-            angular_sep = pair.lambda -
-                muladd(Float64(real(c)), Float64(real(c)),
-                    -2m * Float64(real(c)))
-            return angular_sep, pair.coefficients
+            pair.lambda, pair.coefficients
+        else
+            _real_lambda_eigenpair_at_size(real(c), s, l, m, N)
         end
-        N = _determine_matrix_size_N(s, l, m)
-    end
-    if selected_backend != :dense_reference &&
-            (c isa Real || (c isa Complex && iszero(imag(c))))
-        lambda, coefficients = _real_lambda_eigenpair_at_size(
-            real(c), s, l, m, N)
         angular_sep = lambda -
             muladd(Float64(real(c)), Float64(real(c)),
                 -2m * Float64(real(c)))
         return angular_sep, coefficients
     end
+    N == -1 && (N = _determine_matrix_size_N(s, l, m))
     return _dense_spectral_decomposition(c, s, l, m, N)
 end
 
@@ -446,12 +446,10 @@ function _angular_eigenvalue(c, s::Int, l::Int, m::Int, N::Int=-1)
     return angular_sep
 end
 
-# For backward compatibility, we can still export the old function names that call the new internal function.
 function angular_sep_const(c, s::Int, l::Int, m::Int, N::Int=-1)
     return _angular_eigenvalue(c, s, l, m, N)
 end
 
-# For backward compatibility, we can still export the old function names that call the new internal function.
 function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1;
         backend=:auto)
     selected_backend = _spectral_backend(backend)
