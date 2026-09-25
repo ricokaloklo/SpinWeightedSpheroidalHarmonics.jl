@@ -66,6 +66,28 @@ swsh = spin_weighted_spheroidal_harmonic(s, l, m, a*omega)
 swsh.spherical_harmonics_l, swsh.coeffs
 ```
 
+## Multiple backends for spectral decomposition
+There are two backends implemented for spectral decomposition and it can be specified with the keyword argument `backend`, which can be either `:banded`, `:dense`, or `:auto` (the default).
+
+For real spheroidicity, the default `backend=:auto` chooses the `:banded` backend, which computes only the requested
+banded spectral eigenpair (eigenvalue + eigenvector). It adaptively increases the spherical-harmonic
+truncation until the eigenvalue drift, eigenvector overlap, coefficient tail,
+and angular-equation residual all pass. 
+
+The resulting coefficients are used
+directly for the harmonic and its exact angular derivatives, so a full dense
+eigendecomposition (which is the `:dense` backend) is not required.
+
+```julia
+banded = spin_weighted_spheroidal_harmonic(
+    -2, 2, 2, 0.35; backend=:banded)
+dense = spin_weighted_spheroidal_harmonic(
+    -2, 2, 2, 0.35; backend=:dense)
+
+banded(pi / 3, 0.0)
+banded(pi / 3, 0.0; theta_derivative=1)
+```
+
 ## How to cite
 If you have used this code in your research that leads to a publication, please cite the following article:
 ```

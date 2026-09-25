@@ -4,17 +4,22 @@ using LinearAlgebra
 
 include("harmonic.jl")
 include("spectral.jl")
+include("continuation.jl")
 
 export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue, spin_weighted_spherical_eigenvalue # Expose these functions to the user
 export Teukolsky_lambda_const # For backward compatbility
+export AngularEigenpair, AngularPathResult
+export AngularContinuationError, AngularCache, DEFAULT_ANGULAR_CACHE
+export clear_angular_cache!, continue_angular_mode, track_angular_mode
+export continue_angular_lateral_pair, mirror_angular_parameters
+export angular_mirror_residual, angular_precision_certificate
+export angular_observables
 
 _TOLERANCE = 1e-16 # Spherical harmonics smaller than this will be ignored in the spectral decomposition
 
 function _format_method_name(method)
     normalized = lowercase(strip(String(method)))
-    if normalized == "auto" || normalized == "direct" || normalized == "chebyshev" || normalized == "jacobi"
-        return normalized
-    end
+    normalized in ("auto", "direct", "chebyshev", "jacobi") && return normalized
     error("Does not understand method $method. Supported values are auto, direct, chebyshev, jacobi (case-insensitive).")
 end
 
@@ -97,7 +102,7 @@ function _spheroidal_boundary_values(coefficients_params, coefficients)
 end
 
 @doc raw"""
-    spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1, method="auto")
+    spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1, method="auto", backend="auto")
 
 Construct the spectral decomposition of this spin-weighted spheroidal harmonic of 
 spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` ($c = a\omega$) 
@@ -108,19 +113,46 @@ will be determined automatically.
 
 Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at any point.
 
-The `method` argument controls how the harmonic is evaluated:
-- `"auto"`: use spectral decomposition with automatic spherical-harmonic backend selection,
-- `"direct"` or `"jacobi"`: use spectral decomposition with that spherical-harmonic backend,
-- `"chebyshev"`: solve the spheroidal ODE directly with Chebyshev pseudo-spectral collocation.
-Method names are case-insensitive.
+The `method` options are `"auto"` (default), `"direct"`, `"jacobi"`, and
+`"chebyshev"`. Method names are case-insensitive.
+
+The `backend` argument controls how the spectral decomposition is solved:
+- `"auto"` (default): `"banded"` for real `c`; for complex `c`, follow the mode along the path with
+  Newton steps, falling back to a full dense eigendecomposition when a step is rejected,
+- `"banded"`: real `c` only. Solve for the requested eigenpair with a banded solver, increasing `N`
+  until it converges, which avoids a full dense eigendecomposition,
+- `"dense"`: a full dense eigendecomposition. For real `c` the mode is picked by its position among
+  the sorted eigenvalues; for complex `c` it is followed along the path, keeping the eigenvector with
+  the largest overlap with the previous step.
+Backend names are case-insensitive.
+
+For complex `c`, "mode `l`" is the mode that connects continuously to the spherical harmonic `l`
+along the straight path from `c = 0`. To follow a different path, use `track_angular_mode` and pass
+a returned eigenpair to `spin_weighted_spheroidal_harmonic`.
 """
-function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1, method="auto")
-    if N == -1
-        N = _determine_matrix_size_N(s, l, m)
+function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
+        N::Int=-1, method="auto", backend="auto")
+    selected_backend = _resolve_spectral_backend(backend, c)
+    if c isa Complex && !iszero(imag(c)) && selected_backend != :dense
+        pair = continue_angular_mode(
+            s, l, m, c; truncation_order=_complex_truncation_order(s, l, m, N, c))
+        return spin_weighted_spheroidal_harmonic(pair; method)
+    end
+    adaptive_pair = nothing
+    if N == -1 && selected_backend != :dense && isreal(c)
+        adaptive_pair = _adaptive_real_eigenpair(real(c), s, l, m)
     end
     method = _format_method_name(method)
+    angular_sep, coefficients = if adaptive_pair !== nothing
+        shift = muladd(Float64(real(c)), Float64(real(c)),
+            -2m * Float64(real(c)))
+        adaptive_pair.lambda - shift, adaptive_pair.coefficients
+    else
+        # With N = -1, the backend picks the size, so N is read off the result
+        _spectral_decomposition(c, s, l, m, N; backend=selected_backend)
+    end
+    N = length(coefficients)
     coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
-    angular_sep, coefficients = _spectral_decomposition(c, s, l, m, N)
     normalization = 1 # already satisfied the normalization cond. \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
     lambda = angular_sep + c^2 - 2*m*c
 
@@ -131,13 +163,12 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c; N::Int=-1,
         spherical_harmonics_l = Vector{Union{SpinWeightedSphericalHarmonicFunction, Nothing}}(undef, length(l_list))
         fill!(spherical_harmonics_l, nothing)
         return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda, :chebyshev, chebyshev_solution)
-    elseif method != "chebyshev"
+    else
         spherical_harmonics_l = [ abs(coefficients[n]) >= _TOLERANCE ? spin_weighted_spherical_harmonic(s, l_list[n], m; method=method) : nothing for n in eachindex(l_list) ]
         return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda, :spectral, nothing)
     end
 end
 
-# The power of multiple dispatch
 @doc raw"""
     SpinWeightedSpheroidalHarmonicFunction(theta, phi; theta_derivative::Int=0, phi_derivative::Int=0)
 
@@ -212,9 +243,6 @@ The default value is `N=-1`, which indicates that a suitable value of `N` will b
 This function is simply a wrapper to `Teukolsky_lambda_const` for backward compatibility.
 """
 function spin_weighted_spheroidal_eigenvalue(s::Int, l::Int, m::Int, c; N::Int=-1)
-    if N == -1
-        N = _determine_matrix_size_N(s, l, m)
-    end
     Teukolsky_lambda_const(c, s, l, m, N)
 end
 
@@ -230,5 +258,6 @@ function spin_weighted_spherical_eigenvalue(s::Int, l::Int, m::Int=0)
     # Eigenvalue for the Schwarzschild case does not depend on m
     Teukolsky_lambda_const(0, s, l, m)
 end
+
 
 end
