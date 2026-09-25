@@ -358,6 +358,17 @@ function _spectral_backend(backend)
     return value
 end
 
+# Like _spectral_backend, but also rejects a backend that cannot handle c,
+# instead of silently running a different solver
+function _resolve_spectral_backend(backend, c)
+    value = _spectral_backend(backend)
+    if value == :banded && c isa Complex && !iszero(imag(c))
+        throw(ArgumentError(
+            "backend=:banded requires real c; use :auto or :dense."))
+    end
+    return value
+end
+
 function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int)
     if c isa Complex && !iszero(imag(c))
         # Complex eigenvalue ordering does not preserve the spherical mode label.
@@ -384,7 +395,7 @@ end
 
 function _spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1;
         backend=:auto)
-    selected_backend = _spectral_backend(backend)
+    selected_backend = _resolve_spectral_backend(backend, c)
     if selected_backend != :dense && isreal(c)
         lambda, coefficients = if N == -1
             pair = _adaptive_real_eigenpair(real(c), s, l, m)
@@ -452,7 +463,7 @@ end
 
 function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1;
         backend=:auto)
-    selected_backend = _spectral_backend(backend)
+    selected_backend = _resolve_spectral_backend(backend, c)
     if c isa Complex && !iszero(imag(c)) &&
             selected_backend != :dense
         return continue_angular_mode(

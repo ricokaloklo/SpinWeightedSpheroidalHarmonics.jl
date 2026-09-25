@@ -122,7 +122,7 @@ and pass a returned eigenpair to `spin_weighted_spheroidal_harmonic`.
 """
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
         N::Int=-1, method="auto", backend="auto")
-    selected_backend = _spectral_backend(backend)
+    selected_backend = _resolve_spectral_backend(backend, c)
     if c isa Complex && !iszero(imag(c)) && selected_backend != :dense
         pair = continue_angular_mode(
             s, l, m, c; truncation_order=_complex_truncation_order(s, l, m, N))
