@@ -77,15 +77,15 @@ eigendecomposition is not required.
 
 ```julia
 fast = spin_weighted_spheroidal_harmonic(
-    -2, 2, 2, 0.35; backend=:fast_selected)
+    -2, 2, 2, 0.35; backend=:banded)
 dense = spin_weighted_spheroidal_harmonic(
-    -2, 2, 2, 0.35; backend=:dense_reference)
+    -2, 2, 2, 0.35; backend=:dense)
 
 fast(pi / 3, 0.0)
 fast(pi / 3, 0.0; theta_derivative=1)
 ```
 
-`backend=:dense_reference` retains the previous dense route for regression
+`backend=:dense` retains the previous dense route for regression
 checks. Complex spheroidicity continues to use angular mode continuation; the
 real-symmetric banded solver is not applied to that problem.
 

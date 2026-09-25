@@ -32,7 +32,7 @@ lambda = pair.lambda
 S = spin_weighted_spheroidal_harmonic(pair)
 ```
 
-Use `backend=:dense_reference` with `spin_weighted_spheroidal_harmonic` or
+Use `backend=:dense` with `spin_weighted_spheroidal_harmonic` or
 `track_angular_mode` to compare with the default backend along the same path.
 
 ## Functions

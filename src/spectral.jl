@@ -352,9 +352,9 @@ end
 
 function _spectral_backend(backend)
     value = Symbol(lowercase(String(backend)))
-    value in (:auto, :fast_selected, :dense_reference) ||
+    value in (:auto, :banded, :dense) ||
         throw(ArgumentError(
-            "backend must be :auto, :fast_selected, or :dense_reference."))
+            "backend must be :auto, :banded, or :dense."))
     return value
 end
 
@@ -362,7 +362,7 @@ function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int)
     if c isa Complex && !iszero(imag(c))
         # Complex eigenvalue ordering does not preserve the spherical mode label.
         pair = continue_angular_mode(
-            s, l, m, float(c); backend=:dense_reference,
+            s, l, m, float(c); backend=:dense,
             truncation_order=_complex_truncation_order(s, l, m, N))
         return pair.angular_sep, pair.coefficients
     end
@@ -385,7 +385,7 @@ end
 function _spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1;
         backend=:auto)
     selected_backend = _spectral_backend(backend)
-    if selected_backend != :dense_reference && isreal(c)
+    if selected_backend != :dense && isreal(c)
         lambda, coefficients = if N == -1
             pair = _adaptive_real_eigenpair(real(c), s, l, m)
             pair.lambda, pair.coefficients
@@ -454,7 +454,7 @@ function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1;
         backend=:auto)
     selected_backend = _spectral_backend(backend)
     if c isa Complex && !iszero(imag(c)) &&
-            selected_backend != :dense_reference
+            selected_backend != :dense
         return continue_angular_mode(
             s, l, m, c;
             truncation_order=_complex_truncation_order(s, l, m, N)).coefficients

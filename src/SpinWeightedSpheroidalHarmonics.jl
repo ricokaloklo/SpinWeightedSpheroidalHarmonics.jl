@@ -4,6 +4,7 @@ using LinearAlgebra
 
 include("harmonic.jl")
 include("spectral.jl")
+include("continuation.jl")
 
 export spin_weighted_spheroidal_harmonic, spin_weighted_spherical_harmonic, spin_weighted_spheroidal_eigenvalue, spin_weighted_spherical_eigenvalue # Expose these functions to the user
 export Teukolsky_lambda_const # For backward compatbility
@@ -115,21 +116,21 @@ Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at 
 The `method` options are `"auto"` (default), `"direct"`, `"jacobi"`, and
 `"chebyshev"`. Method names are case-insensitive.
 
-The `backend` options are `"auto"` (default), `"fast_selected"`, and
-`"dense_reference"`. For an ordered complex path, use `track_angular_mode`
+The `backend` options are `"auto"` (default), `"banded"`, and
+`"dense"`. For an ordered complex path, use `track_angular_mode`
 and pass a returned eigenpair to `spin_weighted_spheroidal_harmonic`.
 """
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
         N::Int=-1, method="auto", backend="auto")
     selected_backend = _spectral_backend(backend)
-    if c isa Complex && !iszero(imag(c)) && selected_backend != :dense_reference
+    if c isa Complex && !iszero(imag(c)) && selected_backend != :dense
         pair = continue_angular_mode(
             s, l, m, c; truncation_order=_complex_truncation_order(s, l, m, N))
         return spin_weighted_spheroidal_harmonic(pair; method)
     end
     adaptive_pair = nothing
     if N == -1
-        if selected_backend != :dense_reference && isreal(c)
+        if selected_backend != :dense && isreal(c)
             adaptive_pair = _adaptive_real_eigenpair(real(c), s, l, m)
             N = adaptive_pair.size
         else
@@ -251,6 +252,5 @@ function spin_weighted_spherical_eigenvalue(s::Int, l::Int, m::Int=0)
     Teukolsky_lambda_const(0, s, l, m)
 end
 
-include("continuation.jl")
 
 end

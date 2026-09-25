@@ -349,7 +349,7 @@ function _advance_angular_segment!(
     max_depth::Int=64,
 )
     target == previous.c && return previous
-    if backend != :dense_reference
+    if backend != :dense
         value_seed, coefficient_seed = _angular_predictor(
             states, previous, target)
         corrected = _corrected_angular_candidate(

@@ -57,7 +57,7 @@ end
         for (s, l, m, c) in ((-2, 2, 2, 0.68), (-2, 10, 2, 5.0), (-1, 8, -3, -4.0))
             fast = spin_weighted_spheroidal_harmonic(s, l, m, c)
             dense = spin_weighted_spheroidal_harmonic(
-                s, l, m, c; N=fast.params.N, backend=:dense_reference)
+                s, l, m, c; N=fast.params.N, backend=:dense)
             @test fast.lambda ≈ dense.lambda rtol=5e-14 atol=1e-12
             @test spin_weighted_spheroidal_eigenvalue(s, l, m, c) ≈
                 dense.lambda rtol=5e-14 atol=1e-12
@@ -93,11 +93,11 @@ end
         for (l, reference) in zip(2:3, references)
             fast = spin_weighted_spheroidal_harmonic(-2, l, 2, c; N=33)
             dense = spin_weighted_spheroidal_harmonic(
-                -2, l, 2, c; N=33, backend=:dense_reference)
+                -2, l, 2, c; N=33, backend=:dense)
             @test fast.lambda ≈ reference rtol=3e-13 atol=2e-12
             @test dense.lambda ≈ fast.lambda rtol=3e-13 atol=2e-12
             @test dense(1.1, 0.3) ≈ fast(1.1, 0.3) rtol=3e-12 atol=2e-12
-            @test SWSH.spectral_coefficients(c, -2, l, 2, 33; backend=:dense_reference) ≈
+            @test SWSH.spectral_coefficients(c, -2, l, 2, 33; backend=:dense) ≈
                 dense.coeffs rtol=3e-12 atol=2e-12
         end
 
@@ -136,12 +136,12 @@ end
         cache = AngularCache()
         positive = continue_angular_mode(-2, 3, 2, 0.4+0.15im; cache)
         negative = continue_angular_mode(-2, 3, 2, -0.4+0.15im; cache)
-        dense = continue_angular_mode(-2, 3, 2, 0.4+0.15im; cache, backend=:dense_reference)
+        dense = continue_angular_mode(-2, 3, 2, 0.4+0.15im; cache, backend=:dense)
         @test positive.lambda != negative.lambda
         @test length(cache.values) == 3
         @test continue_angular_mode(-2, 3, 2, 0.4+0.15im; cache) === positive
         @test continue_angular_mode(
-            -2, 3, 2, 0.4+0.15im; cache, backend=:dense_reference) === dense
+            -2, 3, 2, 0.4+0.15im; cache, backend=:dense) === dense
 
         result = track_angular_mode(-2, 2, 2, [0.0, 0.15, 0.15+0.1im, 0.1im, 0.0])
         @test result.status == :closed
