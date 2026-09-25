@@ -222,4 +222,20 @@ end
         @test continue_angular_mode(-2, 2, 2, 1.0-4.0im;
             truncation_order=32, cache=nothing).matrix_size == 33
     end
+
+    @testset "Banded solver accepts after one solve" begin
+        # The size estimate is usually enough, so a single solve should be accepted,
+        # and it should agree with a much larger reference solve
+        for (s, l, m, c) in ((-2, 2, 2, 0.1), (-2, 2, 2, 0.68), (-2, 6, 2, 5.0),
+                (0, 5, 0, 10.0), (-2, 4, 2, 20.0), (1, 3, -1, -7.0))
+            pair = SWSH._adaptive_real_eigenpair(c, s, l, m)
+            @test pair.refinement == 0
+            idx = l - max(abs(s), abs(m)) + 1
+            reference_lambda, reference, _ = SWSH._real_lambda_eigenpair_at_size(
+                c, s, l, m, idx + ceil(Int, 3abs(c)) + 100)
+            @test pair.lambda ≈ reference_lambda rtol=1e-14
+            @test norm(reference[1:pair.size] - pair.coefficients) < 1e-12
+            @test norm(reference[pair.size+1:end]) < 1e-14
+        end
+    end
 end

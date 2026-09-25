@@ -8,10 +8,21 @@ const SWSH_EIGENVALUE_RTOL = 5e-15
 const SWSH_MIN_BUFFER = 10
 const SWSH_MAX_REFINEMENTS = 20
 const SWSH_EIGENVECTOR_OVERLAP_TOL = 5e-13
-const SWSH_EIGENVECTOR_TAIL_TOL = 5e-12
 const SWSH_EIGENVECTOR_RESIDUAL_TOL = 5e-13
 # Target size of the neglected spectral coefficients, used to estimate the matrix size
 const SWSH_COEFFICIENT_TAIL_TOL = 1e-14
+# Number of trailing coefficients checked to decide whether the truncation is adequate
+const SWSH_COEFFICIENT_TAIL_WINDOW = 4
+
+#=
+The truncation is adequate when the last few coefficients are below
+SWSH_COEFFICIENT_TAIL_TOL: the coefficients fall off faster than exponentially,
+so the neglected ones beyond N are smaller still.
+=#
+function _coefficient_tail(coefficients)
+    N = length(coefficients)
+    return norm(view(coefficients, max(1, N - SWSH_COEFFICIENT_TAIL_WINDOW + 1):N))
+end
 #=
 Roundoff perturbs an eigenvector by an angle of about eps*||M||/gap, where gap is the
 distance to the nearest other eigenvalue. Below this relative gap that angle exceeds the
@@ -218,35 +229,29 @@ function _symmetric_band_inf_norm(band::Matrix{Float64})
     return maximum(row_sums)
 end
 
-# Distance from eigenvalue `index` to its nearest neighbour, relative to the matrix
-# norm. Only eigenvalues are computed, so this is much cheaper than an eigenpair.
-function _banded_relative_gap(c::Real, s::Int, l::Int, m::Int, N::Int)
-    N == 1 && return Inf
-    index = _ell_index_in_matrix(s, l, m, N)
-    band = _real_lambda_band(c, s, m, N)
-    matrix_norm = _symmetric_band_inf_norm(band) # dsbevx overwrites band
-    lower, upper = max(1, index - 1), min(N, index + 1)
-    values = _selected_banded_eigenvalues!(band, lower, upper)
-    position = index - lower + 1
-    gap = minimum(abs(values[k] - values[position])
-        for k in eachindex(values) if k != position)
-    return gap / max(matrix_norm, floatmin(Float64))
-end
-
-function _selected_banded_eigenpair!(band::Matrix{Float64}, index::Int)
+#=
+Return the requested eigenpair and, with neighbours, the gap to the nearest neighbouring
+eigenvalue relative to the matrix norm (NaN otherwise). The neighbours come from the same
+LAPACK call, which costs little more than the eigenpair alone: most of the cost of a call
+is the reduction to tridiagonal form, which they share.
+=#
+function _selected_banded_eigenpair!(band::Matrix{Float64}, index::Int;
+        neighbours::Bool=false)
     n = BlasInt(size(band, 2))
     kd = BlasInt(size(band, 1) - 1)
     leading_band = BlasInt(size(band, 1))
+    matrix_norm = neighbours ? _symmetric_band_inf_norm(band) : NaN # dsbevx overwrites band
     q = zeros(Float64, Int(n), Int(n))
     leading_q = n
     lower_value = 0.0
     upper_value = 0.0
-    lower_index = BlasInt(index)
-    upper_index = BlasInt(index)
+    lower_index = BlasInt(neighbours ? max(1, index - 1) : index)
+    upper_index = BlasInt(neighbours ? min(Int(n), index + 1) : index)
+    expected = Int(upper_index - lower_index) + 1
     absolute_tolerance = 2floatmin(Float64)
     found = Ref{BlasInt}()
     eigenvalues = zeros(Float64, Int(n))
-    eigenvectors = zeros(Float64, Int(n), 1)
+    eigenvectors = zeros(Float64, Int(n), expected)
     leading_eigenvectors = n
     work = zeros(Float64, 7 * Int(n))
     integer_work = zeros(BlasInt, 5 * Int(n))
@@ -266,21 +271,30 @@ function _selected_banded_eigenpair!(band::Matrix{Float64}, index::Int)
         leading_eigenvectors, work, integer_work, failed, info, 1, 1, 1)
 
     info[] == 0 || error("LAPACK dsbevx failed with info=$(info[]).")
-    found[] == 1 || error("LAPACK dsbevx returned $(found[]) eigenpairs.")
-    vector = view(eigenvectors, :, 1)
+    found[] == expected ||
+        error("LAPACK dsbevx returned $(found[]) eigenpairs instead of $expected.")
+    position = index - Int(lower_index) + 1 # the requested mode within the block
+    value = eigenvalues[position]
+    relative_gap = if neighbours
+        gap = minimum((abs(eigenvalues[k] - value) for k in 1:expected
+            if k != position); init=Inf)
+        gap / max(matrix_norm, floatmin(Float64))
+    else
+        NaN
+    end
+    vector = view(eigenvectors, :, position)
     vector ./= norm(vector)
     pivot = vector[index]
     if iszero(pivot)
         pivot = vector[argmax(abs.(vector))]
     end
     signbit(pivot) && (vector .*= -1)
-    return eigenvalues[1], ComplexF64.(vector)
+    return value, ComplexF64.(vector), relative_gap
 end
 
 #=
-With check_gap, throw if the eigenvector cannot be resolved (see SWSH_EIGENVECTOR_GAP_TOL).
-The adaptive solver skips it while it is still increasing N and checks once at the end.
-The returned gap is NaN when it was not checked.
+Also return the relative gap to the neighbouring eigenvalues. With check_gap, throw if
+the eigenvector cannot be resolved (see SWSH_EIGENVECTOR_GAP_TOL).
 =#
 function _real_lambda_eigenpair_at_size(
     c::Real,
@@ -291,11 +305,9 @@ function _real_lambda_eigenpair_at_size(
     check_gap::Bool=true,
 )
     index = _ell_index_in_matrix(s, l, m, N)
-    lambda, coefficients = _selected_banded_eigenpair!(
-        _real_lambda_band(c, s, m, N), index)
-    check_gap || return lambda, coefficients, NaN
-    relative_gap = _banded_relative_gap(c, s, l, m, N)
-    relative_gap >= SWSH_EIGENVECTOR_GAP_TOL ||
+    lambda, coefficients, relative_gap = _selected_banded_eigenpair!(
+        _real_lambda_band(c, s, m, N), index; neighbours=true)
+    check_gap && relative_gap < SWSH_EIGENVECTOR_GAP_TOL &&
         error(_unresolvable_eigenvector_message(s, l, m, c, relative_gap))
     return lambda, coefficients, relative_gap
 end
@@ -333,13 +345,12 @@ function _real_lambda_residual(c::Real, s::Int, m::Int, lambda,
     return residual / max(scale, floatmin(Float64))
 end
 
-function _coefficient_overlap(first, second)
-    count = min(length(first), length(second))
-    numerator = abs(dot(view(first, 1:count), view(second, 1:count)))
-    denominator = norm(first) * norm(second)
-    return numerator / max(denominator, floatmin(Float64))
-end
-
+#=
+Start from the size estimated from |c|, which is usually enough, and accept the first
+solve whose coefficient tail and residual are small: once the neglected coefficients are
+below tolerance, a larger matrix could only change the eigenpair at that level. Increase
+the size only when the tail is still too large.
+=#
 function _adaptive_real_eigenpair(c::Real, s::Int, l::Int, m::Int)
     if iszero(c)
         size = _determine_matrix_size_N(s, l, m)
@@ -347,58 +358,26 @@ function _adaptive_real_eigenpair(c::Real, s::Int, l::Int, m::Int)
         coefficients = zeros(ComplexF64, size)
         coefficients[index] = 1.0 + 0.0im
         return (lambda=Float64(eigenvalue_Schwarzschild(s, l)),
-            coefficients, size, refinement=0, delta=0.0,
-            overlap=1.0, tail=0.0, residual=0.0, gap=Inf)
+            coefficients, size, refinement=0, tail=0.0, residual=0.0, gap=Inf)
     end
 
-    lmin = max(abs(m), abs(s))
-    index = l - lmin + 1
     c64 = Float64(c)
-    size = max(index + SWSH_MIN_BUFFER, index + ceil(Int, abs(c64)) + 8)
+    size = _determine_matrix_size_N(s, l, m, c64)
     step = max(8, ceil(Int, abs(c64) / 8))
-    previous_lambda, previous_coefficients =
-        _real_lambda_eigenpair_at_size(c64, s, l, m, size; check_gap=false)
-
-    for refinement in 1:SWSH_MAX_REFINEMENTS
-        next_size = size + step
-        current_lambda, current_coefficients = _real_lambda_eigenpair_at_size(
-            c64, s, l, m, next_size; check_gap=false)
-        delta = abs(current_lambda - previous_lambda)
-        threshold = SWSH_EIGENVALUE_ATOL +
-            SWSH_EIGENVALUE_RTOL * max(abs(previous_lambda), abs(current_lambda))
-        overlap = _coefficient_overlap(
-            previous_coefficients, current_coefficients)
-        tail_start = max(1, next_size - step + 1)
-        tail = norm(view(current_coefficients, tail_start:next_size))
-        residual = _real_lambda_residual(
-            c64, s, m, current_lambda, current_coefficients)
-        converged = delta <= threshold &&
-            1 - overlap <= SWSH_EIGENVECTOR_OVERLAP_TOL &&
-            tail <= SWSH_EIGENVECTOR_TAIL_TOL &&
-            residual <= SWSH_EIGENVECTOR_RESIDUAL_TOL
-        if converged
-            # The gap converges as fast as the eigenvalues, so check it once, at the end
-            gap = _banded_relative_gap(c64, s, l, m, next_size)
+    gap = Inf
+    for refinement in 0:SWSH_MAX_REFINEMENTS
+        lambda, coefficients, gap = _real_lambda_eigenpair_at_size(
+            c64, s, l, m, size; check_gap=false)
+        tail = _coefficient_tail(coefficients)
+        residual = _real_lambda_residual(c64, s, m, lambda, coefficients)
+        if tail <= SWSH_COEFFICIENT_TAIL_TOL && residual <= SWSH_EIGENVECTOR_RESIDUAL_TOL
             gap >= SWSH_EIGENVECTOR_GAP_TOL ||
                 error(_unresolvable_eigenvector_message(s, l, m, c, gap))
-            return (
-                lambda=current_lambda,
-                coefficients=current_coefficients,
-                size=next_size,
-                refinement,
-                delta,
-                overlap,
-                tail,
-                residual,
-                gap,
-            )
+            return (; lambda, coefficients, size, refinement, tail, residual, gap)
         end
-        size = next_size
-        previous_lambda = current_lambda
-        previous_coefficients = current_coefficients
+        size += step
     end
     # An unresolvable eigenvector also shows up as one that never settles
-    gap = _banded_relative_gap(c64, s, l, m, size)
     gap >= SWSH_EIGENVECTOR_GAP_TOL ||
         error(_unresolvable_eigenvector_message(s, l, m, c, gap))
     error("SWSH eigenpair failed to converge after $(SWSH_MAX_REFINEMENTS) matrix refinements.")
@@ -478,8 +457,8 @@ function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1)
     step = max(8, ceil(Int, abs(c) / 8))
     for _ in 0:SWSH_MAX_REFINEMENTS
         angular_sep, coefficients = _dense_real_eigenpair_at_size(c, s, l, m, N)
-        tail = norm(view(coefficients, N - SWSH_MIN_BUFFER + 1:N))
-        tail <= SWSH_EIGENVECTOR_TAIL_TOL && return angular_sep, coefficients
+        _coefficient_tail(coefficients) <= SWSH_COEFFICIENT_TAIL_TOL &&
+            return angular_sep, coefficients
         N += step
     end
     error("SWSH dense eigenpair did not reach a small enough coefficient tail after $(SWSH_MAX_REFINEMENTS) matrix refinements.")
