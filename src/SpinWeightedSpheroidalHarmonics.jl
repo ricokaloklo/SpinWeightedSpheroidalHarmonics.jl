@@ -116,9 +116,19 @@ Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at 
 The `method` options are `"auto"` (default), `"direct"`, `"jacobi"`, and
 `"chebyshev"`. Method names are case-insensitive.
 
-The `backend` options are `"auto"` (default), `"banded"`, and
-`"dense"`. For an ordered complex path, use `track_angular_mode`
-and pass a returned eigenpair to `spin_weighted_spheroidal_harmonic`.
+The `backend` argument controls how the spectral decomposition is solved:
+- `"auto"` (default): `"banded"` for real `c`; for complex `c`, follow the mode along the path with
+  Newton steps, falling back to a full dense eigendecomposition when a step is rejected,
+- `"banded"`: real `c` only. Solve for the requested eigenpair with a banded solver, increasing `N`
+  until it converges, which avoids a full dense eigendecomposition,
+- `"dense"`: a full dense eigendecomposition. For real `c` the mode is picked by its position among
+  the sorted eigenvalues; for complex `c` it is followed along the path, keeping the eigenvector with
+  the largest overlap with the previous step.
+Backend names are case-insensitive.
+
+For complex `c`, "mode `l`" is the mode that connects continuously to the spherical harmonic `l`
+along the straight path from `c = 0`. To follow a different path, use `track_angular_mode` and pass
+a returned eigenpair to `spin_weighted_spheroidal_harmonic`.
 """
 function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
         N::Int=-1, method="auto", backend="auto")
