@@ -389,6 +389,92 @@ function _advance_angular_segment!(
         depth=depth + 1, max_depth)
 end
 
+#=
+Along a real path the banded solver needs no tracking: for real c the eigenvalues
+keep their order, so the mode is simply the one at its index. Each point is solved
+on its own, then phase-aligned with the previous point so that the states follow
+the same convention as the other backends.
+=#
+function _banded_angular_state(
+    previous::AngularEigenpair{Float64},
+    target::ComplexF64,
+)
+    c = real(target)
+    lambda, coefficients = _real_lambda_eigenpair_at_size(
+        c, previous.s, previous.l, previous.m, previous.matrix_size)
+    phase, overlap = _phase_align!(coefficients, previous.coefficients)
+    angular_sep = lambda - muladd(c, c, -2previous.m * c)
+    residual = _real_lambda_residual(
+        c, previous.s, previous.m, lambda, coefficients)
+    condition = _complex_symmetric_eigenvector_condition(coefficients)
+    # The mode is picked by index, not by overlap, so there is no overlap
+    # margin to report, and the banded solver does not compute the gap
+    return AngularEigenpair(
+        previous.s, previous.l, previous.m, target, previous.sheet_id,
+        ComplexF64(angular_sep), ComplexF64(lambda), coefficients,
+        previous.matrix_size, previous.truncation_order, 53,
+        :parallel_transport, residual, overlap, 1.0, Inf, condition,
+        ComplexF64(phase), :banded)
+end
+
+@doc raw"""
+    track_angular_mode(s::Int, l::Int, m::Int, requested_path; backend=:auto, sheet_id::Symbol=:principal, truncation_order::Int=32, max_step::Real=0.5, min_step::Real=1e-10, overlap_min::Real=0.65, overlap_margin_min::Real=1e-8, residual_tol::Real=5e-12)
+
+Follow the spin-weighted spheroidal mode of spin weight `s`, harmonic index `l`, and
+azimuthal index `m` along `requested_path`, a sequence of spheroidicities `c` ($c = a\omega$)
+visited in order. The path always starts at `c = 0`, where the mode is exactly the
+spin-weighted spherical harmonic of index `l`; `0` is prepended if the path does not
+start there. Each leg of the path is divided into steps of at most `max_step`.
+
+Because the mode is followed continuously from `c = 0`, "mode `l`" means the mode
+connected to the spherical harmonic `l` along *this* path. For complex `c` the result
+can depend on the path once it passes a branch point of the eigenvalue: a different
+path can end on a different mode. `spin_weighted_spheroidal_harmonic` and
+`spin_weighted_spheroidal_eigenvalue` use the straight line from `0` to `c`.
+
+The `backend` argument controls how each step is solved:
+- `"auto"` (default): Newton iteration seeded by extrapolating the previous steps, falling
+  back to a full dense eigendecomposition when Newton fails or its result is rejected,
+- `"dense"`: a full dense eigendecomposition at every step, keeping the eigenvector with
+  the largest overlap with the previous step,
+- `"banded"`: real paths only. Every point is solved on its own with the banded eigenpair
+  solver, which picks the mode by its position among the (real) eigenvalues; for real `c`
+  this is the same mode as following it continuously. The matrix size is fixed by
+  `truncation_order` (it is not increased adaptively), and the acceptance tolerances
+  below are not used. A path with any complex point throws an `ArgumentError`.
+Backend names are case-insensitive.
+
+The other keyword arguments are:
+- `sheet_id`: a label stored in every returned state, to tell paths apart,
+- `truncation_order`: the number of spherical harmonics kept beyond the target mode,
+  so that the matrix has `l - max(|m|, |s|) + 1 + truncation_order` rows,
+- `min_step`: when a step is rejected it is halved; continuation gives up once a step
+  is smaller than `min_step * max(1, |c|)`,
+- `overlap_min`: the smallest overlap with the previous step's eigenvector for a step to be accepted,
+- `overlap_margin_min`: when the mode is close to another eigenvalue, how much larger its
+  overlap must be than the runner-up's,
+- `residual_tol`: the largest relative residual of the eigen-equation for a step to be accepted.
+
+Return an `AngularPathResult` whose `states` hold an `AngularEigenpair` for `c = 0`, every
+intermediate step, and every point of the path, in order; `last(result.states)` is the mode
+at the end of the path, and can be passed to `spin_weighted_spheroidal_harmonic`. When the
+path ends where it started, `monodromy_overlap` and `lambda_closure_error` compare the final
+state with the initial one, and `status` is `:closed` or `:monodromy_failed`; otherwise
+`status` is `:open`.
+
+Throw an `AngularContinuationError` when a step cannot be accepted even at the smallest
+step size, which usually means the path runs into an eigenvalue collision or an
+exceptional point.
+
+# Example
+```julia
+path = [0.0, 0.5 - 2.0im, 1.0 - 4.0im]
+result = track_angular_mode(-2, 2, 2, path)
+pair = last(result.states)
+S = spin_weighted_spheroidal_harmonic(pair)
+S(1.1, 0.3)
+```
+"""
 function track_angular_mode(
     s::Int,
     l::Int,
@@ -406,6 +492,11 @@ function track_angular_mode(
     selected_backend = _spectral_backend(backend)
     path = ComplexF64.(collect(requested_path))
     isempty(path) && throw(ArgumentError("requested_path must not be empty."))
+    if selected_backend == :banded && !all(isreal, path)
+        throw(ArgumentError(
+            "backend=:banded requires real c, so every point on the path " *
+            "must be real; use :auto or :dense."))
+    end
     first(path) == 0 || pushfirst!(path, 0.0 + 0.0im)
     matrix_size = _angular_matrix_size(s, l, m, truncation_order)
     current = _spherical_angular_pair(
@@ -418,12 +509,18 @@ function track_angular_mode(
         for step_index in 1:subdivisions
             target = current.c +
                 (requested_target - current.c) / (subdivisions - step_index + 1)
-            current = _advance_angular_segment!(
-                states, current, target;
-                overlap_min=Float64(overlap_min),
-                overlap_margin_min=Float64(overlap_margin_min),
-                residual_tol=Float64(residual_tol),
-                min_step=Float64(min_step), backend=selected_backend)
+            if selected_backend == :banded
+                # Same steps as the other backends, so their states line up
+                current = _banded_angular_state(current, target)
+                push!(states, current)
+            else
+                current = _advance_angular_segment!(
+                    states, current, target;
+                    overlap_min=Float64(overlap_min),
+                    overlap_margin_min=Float64(overlap_margin_min),
+                    residual_tol=Float64(residual_tol),
+                    min_step=Float64(min_step), backend=selected_backend)
+            end
         end
     end
 
