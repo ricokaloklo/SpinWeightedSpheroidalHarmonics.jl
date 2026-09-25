@@ -139,23 +139,20 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
         return spin_weighted_spheroidal_harmonic(pair; method)
     end
     adaptive_pair = nothing
-    if N == -1
-        if selected_backend != :dense && isreal(c)
-            adaptive_pair = _adaptive_real_eigenpair(real(c), s, l, m)
-            N = adaptive_pair.size
-        else
-            N = _determine_matrix_size_N(s, l, m)
-        end
+    if N == -1 && selected_backend != :dense && isreal(c)
+        adaptive_pair = _adaptive_real_eigenpair(real(c), s, l, m)
     end
     method = _format_method_name(method)
-    coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     angular_sep, coefficients = if adaptive_pair !== nothing
         shift = muladd(Float64(real(c)), Float64(real(c)),
             -2m * Float64(real(c)))
         adaptive_pair.lambda - shift, adaptive_pair.coefficients
     else
+        # With N = -1, the backend picks the size, so N is read off the result
         _spectral_decomposition(c, s, l, m, N; backend=selected_backend)
     end
+    N = length(coefficients)
+    coefficients_params = SpectralDecompositionInputParams(s, l, m, c, N)
     normalization = 1 # already satisfied the normalization cond. \int_{0}^{pi} [nf*S(theta)]^2 sin(theta) d theta = 1
     lambda = angular_sep + c^2 - 2*m*c
 

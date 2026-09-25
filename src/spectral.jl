@@ -1,8 +1,6 @@
 using LinearAlgebra
 using LinearAlgebra.BLAS: @blasfunc, BlasInt
 
-include("utils.jl")
-
 const SWSH_LAPACK = LinearAlgebra.LAPACK.liblapack
 const SWSH_SMALL_C_LIMIT = 1e-6
 const SWSH_EIGENVALUE_ATOL = 5e-14
@@ -12,6 +10,17 @@ const SWSH_MAX_REFINEMENTS = 20
 const SWSH_EIGENVECTOR_OVERLAP_TOL = 5e-13
 const SWSH_EIGENVECTOR_TAIL_TOL = 5e-12
 const SWSH_EIGENVECTOR_RESIDUAL_TOL = 5e-13
+
+function _determine_matrix_size_N(s::Int, l::Int, m::Int)
+    #=
+    Determine a suitable value of N for the spectral decomposition
+
+    The value of N calculated here is essentially lmax for
+    the spectral decomposition. Then we apply a 'buffer' of SWSH_MIN_BUFFER
+    =#
+    N = l - max(abs(m), abs(s)) + 1
+    return N + SWSH_MIN_BUFFER
+end
 
 function Fslm(s::Int, l::Int, m::Int)
     # 'Edge' case where l is -1, this can happen when both |m| and |s| are 0 (since lmin = max(|m|, |s|))
@@ -369,7 +378,12 @@ function _resolve_spectral_backend(backend, c)
     return value
 end
 
-function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int)
+#=
+N = -1 picks the default size here, where it is known which branch is taken:
+for complex c the same truncation as the default (:auto) route, so that the two
+backends can be compared directly; for real c the previous fixed size.
+=#
+function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1)
     if c isa Complex && !iszero(imag(c))
         # Complex eigenvalue ordering does not preserve the spherical mode label.
         pair = continue_angular_mode(
@@ -377,6 +391,7 @@ function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int)
             truncation_order=_complex_truncation_order(s, l, m, N))
         return pair.angular_sep, pair.coefficients
     end
+    N == -1 && (N = _determine_matrix_size_N(s, l, m))
     idx = _ell_index_in_matrix(s, l, m, N)
     if c == 0
         coefficients = zeros(ComplexF64, N)
@@ -408,7 +423,6 @@ function _spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1;
                 -2m * Float64(real(c)))
         return angular_sep, coefficients
     end
-    N == -1 && (N = _determine_matrix_size_N(s, l, m))
     return _dense_spectral_decomposition(c, s, l, m, N)
 end
 
