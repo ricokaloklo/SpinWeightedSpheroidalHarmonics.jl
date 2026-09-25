@@ -1,4 +1,3 @@
-const SWSH_DEFAULT_ANGULAR_ORDER = 32
 const SWSH_DEFAULT_MAX_PATH_STEP = 0.5
 const SWSH_DEFAULT_MIN_PATH_STEP = 1.0e-10
 const SWSH_DEFAULT_OVERLAP_MIN = 0.65
@@ -168,12 +167,14 @@ function _relative_eigen_residual(matrix, value, coefficients)
     return residual / max(scale, eps(real(eltype(matrix))))
 end
 
-function _relative_spectral_gap(values, index::Int)
+# Gap to the nearest other eigenvalue, relative to the matrix norm: this is what
+# decides whether the eigenvector can be resolved (see SWSH_EIGENVECTOR_GAP_TOL)
+function _relative_spectral_gap(values, index::Int, matrix_norm)
     length(values) == 1 && return Inf
     value = values[index]
     gap = minimum(abs(values[j] - value) for j in eachindex(values)
         if j != index)
-    return gap / max(one(real(value)), abs(value))
+    return gap / max(matrix_norm, floatmin(Float64))
 end
 
 function _spherical_angular_pair(
@@ -228,7 +229,8 @@ function _angular_candidate(
     lambda = angular_sep + c^2 - 2previous.m * c
     residual = _relative_eigen_residual(
         matrix, angular_sep, coefficients)
-    gap = _relative_spectral_gap(decomposition.values, selected)
+    gap = _relative_spectral_gap(
+        decomposition.values, selected, opnorm(matrix, Inf))
     condition = _complex_symmetric_eigenvector_condition(coefficients)
     status = gap <= sqrt(eps(Float64)) ||
         condition >= sqrt(SWSH_DEFAULT_EP_CONDITION_LIMIT) ?
@@ -264,6 +266,18 @@ function _angular_predictor(
     return value, coefficients
 end
 
+function _bordered_jacobian(matrix, value, coefficients, reference)
+    size = length(coefficients)
+    jacobian = zeros(ComplexF64, size + 1, size + 1)
+    jacobian[1:size, 1:size] .= matrix
+    @inbounds for index in 1:size
+        jacobian[index, index] -= value
+        jacobian[index, size + 1] = -coefficients[index]
+        jacobian[size + 1, index] = conj(reference[index])
+    end
+    return jacobian
+end
+
 function _corrected_angular_candidate(
     previous::AngularEigenpair{Float64},
     target::ComplexF64,
@@ -281,6 +295,8 @@ function _corrected_angular_candidate(
     coefficients ./= normalization
     value = value_seed
     size = previous.matrix_size
+    factorization = nothing
+    jacobian_norm = 0.0
 
     for _ in 1:max_iterations
         residual_vector = matrix * coefficients - value * coefficients
@@ -288,20 +304,29 @@ function _corrected_angular_candidate(
         residual = max(norm(residual_vector), abs(normalization_error))
         residual <= 100eps(Float64) * max(1.0, abs(value)) && break
 
-        jacobian = zeros(ComplexF64, size + 1, size + 1)
-        jacobian[1:size, 1:size] .= matrix
-        @inbounds for index in 1:size
-            jacobian[index, index] -= value
-            jacobian[index, size + 1] = -coefficients[index]
-            jacobian[size + 1, index] = conj(reference[index])
-        end
+        jacobian = _bordered_jacobian(matrix, value, coefficients, reference)
         factorization = lu(jacobian; check=false)
         issuccess(factorization) || return nothing
+        jacobian_norm = opnorm(jacobian, 1)
         correction = factorization \ (-vcat(residual_vector, normalization_error))
         all(isfinite, correction) || return nothing
         coefficients .+= view(correction, 1:size)
         value += correction[size + 1]
     end
+
+    #=
+    The bordered Jacobian becomes singular as a neighbouring eigenvalue approaches,
+    so its reciprocal condition number (cheap, given the LU factors) estimates the
+    relative gap without an eigendecomposition. It underestimates the true gap, so a
+    threshold on it errs toward rejecting, and the dense fallback then measures it.
+    =#
+    if factorization === nothing # the prediction had already converged
+        jacobian = _bordered_jacobian(matrix, value, coefficients, reference)
+        factorization = lu(jacobian; check=false)
+        jacobian_norm = opnorm(jacobian, 1)
+    end
+    gap = issuccess(factorization) ? LinearAlgebra.LAPACK.gecon!(
+        '1', copy(factorization.factors), jacobian_norm) : 0.0
 
     coefficients ./= norm(coefficients)
     phase, overlap = _phase_align!(coefficients, reference)
@@ -313,13 +338,16 @@ function _corrected_angular_candidate(
     finite = isfinite(lambda) &&
         isfinite(residual) && isfinite(overlap) && isfinite(condition)
     finite || return nothing
-    status = condition >= sqrt(SWSH_DEFAULT_EP_CONDITION_LIMIT) ?
+    status = gap <= sqrt(eps(Float64)) ||
+        condition >= sqrt(SWSH_DEFAULT_EP_CONDITION_LIMIT) ?
         :near_collision : :predictor_corrected
+    # Newton does not compare against the other eigenvectors, so there is no
+    # overlap margin to report; the gap estimate guards against a close neighbour
     return AngularEigenpair(
         previous.s, previous.l, previous.m, target, previous.sheet_id,
         angular_sep, lambda, coefficients, previous.matrix_size,
         previous.truncation_order, 53, :parallel_transport,
-        residual, overlap, 1.0, Inf, condition, phase, status)
+        residual, overlap, 1.0, gap, condition, phase, status)
 end
 
 @inline function _angular_candidate_accepted(
@@ -332,6 +360,7 @@ end
         candidate.residual <= residual_tol &&
         candidate.previous_overlap >= overlap_min &&
         candidate.eigenvector_condition <= SWSH_DEFAULT_EP_CONDITION_LIMIT &&
+        candidate.spectral_gap >= SWSH_EIGENVECTOR_GAP_TOL &&
         (candidate.spectral_gap > sqrt(eps(Float64)) ||
             candidate.overlap_margin >= overlap_margin_min)
 end
@@ -367,6 +396,18 @@ function _advance_angular_segment!(
         return candidate
     end
 
+    # candidate comes from a full eigendecomposition, so its gap is exact.
+    # A smaller step cannot help when the mode is degenerate at the target itself.
+    if candidate.spectral_gap < SWSH_EIGENVECTOR_GAP_TOL
+        throw(AngularContinuationError(
+            _unresolvable_eigenvector_message(
+                previous.s, previous.l, previous.m, target,
+                candidate.spectral_gap),
+            previous.c, target, candidate.previous_overlap,
+            candidate.overlap_margin, candidate.residual,
+            candidate.spectral_gap, candidate.eigenvector_condition))
+    end
+
     step = abs(target - previous.c)
     scale = max(1.0, abs(previous.c), abs(target))
     if depth >= max_depth || step <= min_step * scale
@@ -400,25 +441,25 @@ function _banded_angular_state(
     target::ComplexF64,
 )
     c = real(target)
-    lambda, coefficients = _real_lambda_eigenpair_at_size(
+    # Throws if the eigenvector cannot be resolved (see SWSH_EIGENVECTOR_GAP_TOL)
+    lambda, coefficients, gap = _real_lambda_eigenpair_at_size(
         c, previous.s, previous.l, previous.m, previous.matrix_size)
     phase, overlap = _phase_align!(coefficients, previous.coefficients)
     angular_sep = lambda - muladd(c, c, -2previous.m * c)
     residual = _real_lambda_residual(
         c, previous.s, previous.m, lambda, coefficients)
     condition = _complex_symmetric_eigenvector_condition(coefficients)
-    # The mode is picked by index, not by overlap, so there is no overlap
-    # margin to report, and the banded solver does not compute the gap
+    # The mode is picked by index, not by overlap, so there is no overlap margin
     return AngularEigenpair(
         previous.s, previous.l, previous.m, target, previous.sheet_id,
         ComplexF64(angular_sep), ComplexF64(lambda), coefficients,
         previous.matrix_size, previous.truncation_order, 53,
-        :parallel_transport, residual, overlap, 1.0, Inf, condition,
+        :parallel_transport, residual, overlap, 1.0, gap, condition,
         ComplexF64(phase), :banded)
 end
 
 @doc raw"""
-    track_angular_mode(s::Int, l::Int, m::Int, requested_path; backend=:auto, sheet_id::Symbol=:principal, truncation_order::Int=32, max_step::Real=0.5, min_step::Real=1e-10, overlap_min::Real=0.65, overlap_margin_min::Real=1e-8, residual_tol::Real=5e-12)
+    track_angular_mode(s::Int, l::Int, m::Int, requested_path; backend=:auto, sheet_id::Symbol=:principal, truncation_order=nothing, max_step::Real=0.5, min_step::Real=1e-10, overlap_min::Real=0.65, overlap_margin_min::Real=1e-8, residual_tol::Real=5e-12)
 
 Follow the spin-weighted spheroidal mode of spin weight `s`, harmonic index `l`, and
 azimuthal index `m` along `requested_path`, a sequence of spheroidicities `c` ($c = a\omega$)
@@ -447,7 +488,9 @@ Backend names are case-insensitive.
 The other keyword arguments are:
 - `sheet_id`: a label stored in every returned state, to tell paths apart,
 - `truncation_order`: the number of spherical harmonics kept beyond the target mode,
-  so that the matrix has `l - max(|m|, |s|) + 1 + truncation_order` rows,
+  so that the matrix has `l - max(|m|, |s|) + 1 + truncation_order` rows. The size is
+  fixed along the path; by default (`nothing`) it is chosen for the largest `|c|` on the
+  path, growing like `sqrt(|c|)` so that the neglected coefficients stay below about `1e-14`,
 - `min_step`: when a step is rejected it is halved; continuation gives up once a step
   is smaller than `min_step * max(1, |c|)`,
 - `overlap_min`: the smallest overlap with the previous step's eigenvector for a step to be accepted,
@@ -482,7 +525,7 @@ function track_angular_mode(
     requested_path;
     backend=:auto,
     sheet_id::Symbol=:principal,
-    truncation_order::Int=SWSH_DEFAULT_ANGULAR_ORDER,
+    truncation_order::Union{Int,Nothing}=nothing,
     max_step::Real=SWSH_DEFAULT_MAX_PATH_STEP,
     min_step::Real=SWSH_DEFAULT_MIN_PATH_STEP,
     overlap_min::Real=SWSH_DEFAULT_OVERLAP_MIN,
@@ -498,6 +541,11 @@ function track_angular_mode(
             "must be real; use :auto or :dense."))
     end
     first(path) == 0 || pushfirst!(path, 0.0 + 0.0im)
+    if truncation_order === nothing
+        # The matrix size is fixed along the path, so size it for the farthest point
+        truncation_order = _complex_truncation_order(
+            s, l, m, -1, maximum(abs, path))
+    end
     matrix_size = _angular_matrix_size(s, l, m, truncation_order)
     current = _spherical_angular_pair(
         s, l, m, matrix_size, truncation_order, sheet_id)
@@ -554,13 +602,16 @@ function continue_angular_mode(
     c;
     backend=:auto,
     sheet_id::Symbol=:straight_from_spherical,
-    truncation_order::Int=SWSH_DEFAULT_ANGULAR_ORDER,
+    truncation_order::Union{Int,Nothing}=nothing,
     cache::Union{AngularCache,Nothing}=DEFAULT_ANGULAR_CACHE,
     kwargs...,
 )
     _require_binary64_angular_input(c)
     selected_backend = _spectral_backend(backend)
     c64 = ComplexF64(c)
+    # Resolved before the cache lookup, so that the key holds the size actually used
+    truncation_order === nothing &&
+        (truncation_order = _complex_truncation_order(s, l, m, -1, c64))
     key = AngularCacheKey(
         s, l, m, c64, sheet_id, 53, truncation_order, selected_backend)
     if cache !== nothing
@@ -586,7 +637,7 @@ function continue_angular_lateral_pair(
     a::Real,
     sigma::Real,
     epsilon::Real;
-    truncation_order::Int=SWSH_DEFAULT_ANGULAR_ORDER,
+    truncation_order::Union{Int,Nothing}=nothing,
     kwargs...,
 )
     sigma > 0 || throw(ArgumentError("sigma must be positive."))

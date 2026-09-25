@@ -135,7 +135,7 @@ function spin_weighted_spheroidal_harmonic(s::Int, l::Int, m::Int, c;
     selected_backend = _resolve_spectral_backend(backend, c)
     if c isa Complex && !iszero(imag(c)) && selected_backend != :dense
         pair = continue_angular_mode(
-            s, l, m, c; truncation_order=_complex_truncation_order(s, l, m, N))
+            s, l, m, c; truncation_order=_complex_truncation_order(s, l, m, N, c))
         return spin_weighted_spheroidal_harmonic(pair; method)
     end
     adaptive_pair = nothing

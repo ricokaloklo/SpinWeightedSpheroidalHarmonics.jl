@@ -173,4 +173,53 @@ end
         @test angular_precision_certificate(-2, 2, 2, 0.2-0.1im;
             truncation_orders=(24, 32), precision_bits=(128, 160)).accepted
     end
+
+    @testset "Unresolvable eigenvectors" begin
+        # For large negative m*c the mode has a partner whose splitting falls below
+        # Float64 resolution: the eigenvector is then an arbitrary mix of the two
+        for c in (-20.0, -30.0)
+            @test_throws ErrorException spin_weighted_spheroidal_harmonic(-2, 2, 2, c)
+            @test_throws ErrorException spin_weighted_spheroidal_harmonic(
+                -2, 2, 2, c; N=40, backend=:dense)
+            @test_throws ErrorException track_angular_mode(-2, 2, 2, [c]; backend=:banded)
+            @test_throws AngularContinuationError track_angular_mode(-2, 2, 2, [c])
+            # The eigenvalue does not need the eigenvector and stays accurate
+            @test spin_weighted_spheroidal_eigenvalue(-2, 2, 2, c) ≈
+                Teukolsky_lambda_const(c, -2, 2, 2, 80) rtol=1e-13
+        end
+        # The near-degeneracy survives a small imaginary part
+        @test_throws AngularContinuationError continue_angular_mode(
+            -2, 2, 2, -30.0-0.5im; cache=nothing)
+        # Resolvable cases are unaffected, and continuation records a real gap
+        @test isfinite(spin_weighted_spheroidal_harmonic(-2, 2, 2, -10.0)(1.1, 0.3))
+        @test isfinite(spin_weighted_spheroidal_harmonic(
+            -2, 2, 2, -10.0; backend=:dense)(1.1, 0.3))
+        pair = continue_angular_mode(-2, 3, 2, 0.4+0.15im; cache=nothing)
+        @test SWSH.SWSH_EIGENVECTOR_GAP_TOL <= pair.spectral_gap < Inf
+    end
+
+    @testset "Default matrix size" begin
+        # Unchanged at c = 0, and growing like sqrt(|c|) beyond it
+        @test SWSH._determine_matrix_size_N(-2, 2, 2) == 11
+        @test SWSH._determine_matrix_size_N(-2, 2, 2, 20.0) >
+            SWSH._determine_matrix_size_N(-2, 2, 2, 5.0) > 11
+        # :dense for real c used to stay at N = 11, which is far too small here
+        for (s, l, m, c) in ((-2, 2, 2, 20.0), (-2, 2, 2, 80.0), (-2, 10, 2, 20.0))
+            @test spin_weighted_spheroidal_harmonic(s, l, m, c; backend=:dense).lambda ≈
+                spin_weighted_spheroidal_eigenvalue(s, l, m, c) rtol=1e-13
+        end
+        # ...and the unresolvable case is now caught without choosing N by hand
+        @test_throws ErrorException spin_weighted_spheroidal_harmonic(
+            -2, 2, 2, -30.0; backend=:dense)
+        # Continuation sizes itself from c: smaller for small |c|, larger for large |c|
+        @test continue_angular_mode(-2, 2, 2, 0.3-0.1im; cache=nothing).matrix_size < 33
+        pair = continue_angular_mode(-2, 10, 2, 20.0-1.0im; cache=nothing)
+        reference = continue_angular_mode(-2, 10, 2, 20.0-1.0im;
+            truncation_order=150, cache=nothing)
+        @test pair.matrix_size > 41
+        @test pair.lambda ≈ reference.lambda rtol=1e-13
+        # An explicit size is still honoured
+        @test continue_angular_mode(-2, 2, 2, 1.0-4.0im;
+            truncation_order=32, cache=nothing).matrix_size == 33
+    end
 end

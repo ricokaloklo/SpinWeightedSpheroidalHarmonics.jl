@@ -10,16 +10,39 @@ const SWSH_MAX_REFINEMENTS = 20
 const SWSH_EIGENVECTOR_OVERLAP_TOL = 5e-13
 const SWSH_EIGENVECTOR_TAIL_TOL = 5e-12
 const SWSH_EIGENVECTOR_RESIDUAL_TOL = 5e-13
+# Target size of the neglected spectral coefficients, used to estimate the matrix size
+const SWSH_COEFFICIENT_TAIL_TOL = 1e-14
+#=
+Roundoff perturbs an eigenvector by an angle of about eps*||M||/gap, where gap is the
+distance to the nearest other eigenvalue. Below this relative gap that angle exceeds the
+one allowed by SWSH_EIGENVECTOR_OVERLAP_TOL (1 - overlap ≈ angle^2/2), so the eigenvector
+cannot be resolved in Float64 even though the eigenvalue still can.
+=#
+const SWSH_EIGENVECTOR_GAP_TOL = eps(Float64) / sqrt(2 * SWSH_EIGENVECTOR_OVERLAP_TOL)
 
-function _determine_matrix_size_N(s::Int, l::Int, m::Int)
+# TODO: once Leaver's method is merged, point users to it with a wider precision, e.g. big(c)
+function _unresolvable_eigenvector_message(s, l, m, c, relative_gap)
+    return "The SWSH eigenvector for (s, l, m) = ($s, $l, $m), c = $c cannot be " *
+        "resolved in Float64: the mode is nearly degenerate with a neighbouring mode " *
+        "(relative gap $relative_gap, below $SWSH_EIGENVECTOR_GAP_TOL), so the " *
+        "harmonic would be an arbitrary mix of the two. The eigenvalue is still " *
+        "accurate, see spin_weighted_spheroidal_eigenvalue."
+end
+
+function _determine_matrix_size_N(s::Int, l::Int, m::Int, c=0)
     #=
-    Determine a suitable value of N for the spectral decomposition
+    Estimate a suitable value of N for the spectral decomposition
 
-    The value of N calculated here is essentially lmax for
-    the spectral decomposition. Then we apply a 'buffer' of SWSH_MIN_BUFFER
+    N covers every spherical harmonic up to the target mode, plus the harmonics
+    beyond it that the mode still needs, plus a 'buffer' of SWSH_MIN_BUFFER.
+    At large |c| the mode is confined near a pole with a width ~ 1/sqrt(|c|), so its
+    spherical-harmonic coefficients fall off like a Gaussian in l of width ~ sqrt(|c|):
+    about sqrt(2 log(1/tol) |c|) more harmonics bring them below tol. This is an
+    estimate; callers that choose N themselves check the coefficient tail afterwards.
     =#
     N = l - max(abs(m), abs(s)) + 1
-    return N + SWSH_MIN_BUFFER
+    beyond = ceil(Int, sqrt(2log(1 / SWSH_COEFFICIENT_TAIL_TOL) * abs(c)))
+    return N + beyond + SWSH_MIN_BUFFER
 end
 
 function Fslm(s::Int, l::Int, m::Int)
@@ -138,7 +161,11 @@ function _real_lambda_band(c::Real, s::Int, m::Int, N::Int)
     return band
 end
 
-function _selected_banded_eigenvalue!(band::Matrix{Float64}, index::Int)
+_selected_banded_eigenvalue!(band::Matrix{Float64}, index::Int) =
+    first(_selected_banded_eigenvalues!(band, index, index))
+
+# Eigenvalues lower:upper (in ascending order) of the symmetric band matrix, without eigenvectors
+function _selected_banded_eigenvalues!(band::Matrix{Float64}, lower::Int, upper::Int)
     n = BlasInt(size(band, 2))
     kd = BlasInt(size(band, 1) - 1)
     leading_band = BlasInt(size(band, 1))
@@ -146,8 +173,9 @@ function _selected_banded_eigenvalue!(band::Matrix{Float64}, index::Int)
     leading_q = BlasInt(1)
     lower_value = 0.0
     upper_value = 0.0
-    lower_index = BlasInt(index)
-    upper_index = BlasInt(index)
+    lower_index = BlasInt(lower)
+    upper_index = BlasInt(upper)
+    expected = upper - lower + 1
     # LAPACK recommends twice the safe minimum for high relative accuracy.
     absolute_tolerance = 2floatmin(Float64)
     found = Ref{BlasInt}()
@@ -172,8 +200,37 @@ function _selected_banded_eigenvalue!(band::Matrix{Float64}, index::Int)
         leading_eigenvectors, work, integer_work, failed, info, 1, 1, 1)
 
     info[] == 0 || error("LAPACK dsbevx failed with info=$(info[]).")
-    found[] == 1 || error("LAPACK dsbevx returned $(found[]) eigenvalues.")
-    return eigenvalues[1]
+    found[] == expected ||
+        error("LAPACK dsbevx returned $(found[]) eigenvalues instead of $expected.")
+    return eigenvalues[1:expected]
+end
+
+# Infinity norm of the symmetric matrix held in upper band storage
+function _symmetric_band_inf_norm(band::Matrix{Float64})
+    kd = size(band, 1) - 1
+    n = size(band, 2)
+    row_sums = zeros(Float64, n)
+    @inbounds for j in 1:n, i in max(1, j - kd):j
+        value = abs(band[kd + 1 + i - j, j])
+        row_sums[i] += value
+        i != j && (row_sums[j] += value)
+    end
+    return maximum(row_sums)
+end
+
+# Distance from eigenvalue `index` to its nearest neighbour, relative to the matrix
+# norm. Only eigenvalues are computed, so this is much cheaper than an eigenpair.
+function _banded_relative_gap(c::Real, s::Int, l::Int, m::Int, N::Int)
+    N == 1 && return Inf
+    index = _ell_index_in_matrix(s, l, m, N)
+    band = _real_lambda_band(c, s, m, N)
+    matrix_norm = _symmetric_band_inf_norm(band) # dsbevx overwrites band
+    lower, upper = max(1, index - 1), min(N, index + 1)
+    values = _selected_banded_eigenvalues!(band, lower, upper)
+    position = index - lower + 1
+    gap = minimum(abs(values[k] - values[position])
+        for k in eachindex(values) if k != position)
+    return gap / max(matrix_norm, floatmin(Float64))
 end
 
 function _selected_banded_eigenpair!(band::Matrix{Float64}, index::Int)
@@ -220,16 +277,27 @@ function _selected_banded_eigenpair!(band::Matrix{Float64}, index::Int)
     return eigenvalues[1], ComplexF64.(vector)
 end
 
+#=
+With check_gap, throw if the eigenvector cannot be resolved (see SWSH_EIGENVECTOR_GAP_TOL).
+The adaptive solver skips it while it is still increasing N and checks once at the end.
+The returned gap is NaN when it was not checked.
+=#
 function _real_lambda_eigenpair_at_size(
     c::Real,
     s::Int,
     l::Int,
     m::Int,
-    N::Int,
+    N::Int;
+    check_gap::Bool=true,
 )
     index = _ell_index_in_matrix(s, l, m, N)
-    return _selected_banded_eigenpair!(
+    lambda, coefficients = _selected_banded_eigenpair!(
         _real_lambda_band(c, s, m, N), index)
+    check_gap || return lambda, coefficients, NaN
+    relative_gap = _banded_relative_gap(c, s, l, m, N)
+    relative_gap >= SWSH_EIGENVECTOR_GAP_TOL ||
+        error(_unresolvable_eigenvector_message(s, l, m, c, relative_gap))
+    return lambda, coefficients, relative_gap
 end
 
 function _real_lambda_residual(c::Real, s::Int, m::Int, lambda,
@@ -280,7 +348,7 @@ function _adaptive_real_eigenpair(c::Real, s::Int, l::Int, m::Int)
         coefficients[index] = 1.0 + 0.0im
         return (lambda=Float64(eigenvalue_Schwarzschild(s, l)),
             coefficients, size, refinement=0, delta=0.0,
-            overlap=1.0, tail=0.0, residual=0.0)
+            overlap=1.0, tail=0.0, residual=0.0, gap=Inf)
     end
 
     lmin = max(abs(m), abs(s))
@@ -289,12 +357,12 @@ function _adaptive_real_eigenpair(c::Real, s::Int, l::Int, m::Int)
     size = max(index + SWSH_MIN_BUFFER, index + ceil(Int, abs(c64)) + 8)
     step = max(8, ceil(Int, abs(c64) / 8))
     previous_lambda, previous_coefficients =
-        _real_lambda_eigenpair_at_size(c64, s, l, m, size)
+        _real_lambda_eigenpair_at_size(c64, s, l, m, size; check_gap=false)
 
     for refinement in 1:SWSH_MAX_REFINEMENTS
         next_size = size + step
-        current_lambda, current_coefficients =
-            _real_lambda_eigenpair_at_size(c64, s, l, m, next_size)
+        current_lambda, current_coefficients = _real_lambda_eigenpair_at_size(
+            c64, s, l, m, next_size; check_gap=false)
         delta = abs(current_lambda - previous_lambda)
         threshold = SWSH_EIGENVALUE_ATOL +
             SWSH_EIGENVALUE_RTOL * max(abs(previous_lambda), abs(current_lambda))
@@ -308,20 +376,31 @@ function _adaptive_real_eigenpair(c::Real, s::Int, l::Int, m::Int)
             1 - overlap <= SWSH_EIGENVECTOR_OVERLAP_TOL &&
             tail <= SWSH_EIGENVECTOR_TAIL_TOL &&
             residual <= SWSH_EIGENVECTOR_RESIDUAL_TOL
-        converged && return (
-            lambda=current_lambda,
-            coefficients=current_coefficients,
-            size=next_size,
-            refinement,
-            delta,
-            overlap,
-            tail,
-            residual,
-        )
+        if converged
+            # The gap converges as fast as the eigenvalues, so check it once, at the end
+            gap = _banded_relative_gap(c64, s, l, m, next_size)
+            gap >= SWSH_EIGENVECTOR_GAP_TOL ||
+                error(_unresolvable_eigenvector_message(s, l, m, c, gap))
+            return (
+                lambda=current_lambda,
+                coefficients=current_coefficients,
+                size=next_size,
+                refinement,
+                delta,
+                overlap,
+                tail,
+                residual,
+                gap,
+            )
+        end
         size = next_size
         previous_lambda = current_lambda
         previous_coefficients = current_coefficients
     end
+    # An unresolvable eigenvector also shows up as one that never settles
+    gap = _banded_relative_gap(c64, s, l, m, size)
+    gap >= SWSH_EIGENVECTOR_GAP_TOL ||
+        error(_unresolvable_eigenvector_message(s, l, m, c, gap))
     error("SWSH eigenpair failed to converge after $(SWSH_MAX_REFINEMENTS) matrix refinements.")
 end
 
@@ -346,14 +425,16 @@ function _ell_index_in_matrix(s::Int, l::Int, m::Int, N::Int)
     return idx
 end
 
+# Harmonics kept beyond the target mode when continuing to c; N = -1 estimates it from c
 @inline function _complex_truncation_order(
     s::Int,
     l::Int,
     m::Int,
     N::Int,
+    c,
 )
-    order = N == -1 ? SWSH_DEFAULT_ANGULAR_ORDER :
-        N - (l - max(abs(m), abs(s)) + 1)
+    N == -1 && (N = _determine_matrix_size_N(s, l, m, c))
+    order = N - (l - max(abs(m), abs(s)) + 1)
     order >= 0 ||
         throw(ArgumentError("N does not contain the target angular mode."))
     return order
@@ -381,17 +462,30 @@ end
 #=
 N = -1 picks the default size here, where it is known which branch is taken:
 for complex c the same truncation as the default (:auto) route, so that the two
-backends can be compared directly; for real c the previous fixed size.
+backends can be compared directly; for real c an estimate from |c| that is then
+checked against the coefficient tail, and increased if needed.
 =#
 function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1)
     if c isa Complex && !iszero(imag(c))
         # Complex eigenvalue ordering does not preserve the spherical mode label.
         pair = continue_angular_mode(
             s, l, m, float(c); backend=:dense,
-            truncation_order=_complex_truncation_order(s, l, m, N))
+            truncation_order=_complex_truncation_order(s, l, m, N, c))
         return pair.angular_sep, pair.coefficients
     end
-    N == -1 && (N = _determine_matrix_size_N(s, l, m))
+    N == -1 || return _dense_real_eigenpair_at_size(c, s, l, m, N)
+    N = _determine_matrix_size_N(s, l, m, c)
+    step = max(8, ceil(Int, abs(c) / 8))
+    for _ in 0:SWSH_MAX_REFINEMENTS
+        angular_sep, coefficients = _dense_real_eigenpair_at_size(c, s, l, m, N)
+        tail = norm(view(coefficients, N - SWSH_MIN_BUFFER + 1:N))
+        tail <= SWSH_EIGENVECTOR_TAIL_TOL && return angular_sep, coefficients
+        N += step
+    end
+    error("SWSH dense eigenpair did not reach a small enough coefficient tail after $(SWSH_MAX_REFINEMENTS) matrix refinements.")
+end
+
+function _dense_real_eigenpair_at_size(c, s::Int, l::Int, m::Int, N::Int)
     idx = _ell_index_in_matrix(s, l, m, N)
     if c == 0
         coefficients = zeros(ComplexF64, N)
@@ -400,6 +494,10 @@ function _dense_spectral_decomposition(c, s::Int, l::Int, m::Int, N::Int=-1)
     end
     spectral_matrix = construct_spectral_matrix(c, s, m, N)
     decomposition = eigen(spectral_matrix)
+    relative_gap = _relative_spectral_gap(
+        decomposition.values, idx, opnorm(spectral_matrix, Inf))
+    relative_gap >= SWSH_EIGENVECTOR_GAP_TOL ||
+        error(_unresolvable_eigenvector_message(s, l, m, c, relative_gap))
     angular_sep = decomposition.values[idx]
     vector = decomposition.vectors[:, idx]
     pivot = vector[idx]
@@ -462,10 +560,13 @@ function _angular_eigenvalue(c::Real, s::Int, l::Int, m::Int, N::Int=-1)
 end
 
 function _angular_eigenvalue(c, s::Int, l::Int, m::Int, N::Int=-1)
+    # Only the eigenvalue is needed, so take the eigenvalue-only real route,
+    # which also works where the eigenvector cannot be resolved
+    isreal(c) && return _angular_eigenvalue(real(c), s, l, m, N)
     if c isa Complex && !iszero(imag(c))
         return continue_angular_mode(
             s, l, m, c;
-            truncation_order=_complex_truncation_order(s, l, m, N)).angular_sep
+            truncation_order=_complex_truncation_order(s, l, m, N, c)).angular_sep
     end
     angular_sep, _ = _spectral_decomposition(c, s, l, m, N)
     return angular_sep
@@ -482,7 +583,7 @@ function spectral_coefficients(c, s::Int, l::Int, m::Int, N::Int=-1;
             selected_backend != :dense
         return continue_angular_mode(
             s, l, m, c;
-            truncation_order=_complex_truncation_order(s, l, m, N)).coefficients
+            truncation_order=_complex_truncation_order(s, l, m, N, c)).coefficients
     end
     _, coeffs = _spectral_decomposition(
         c, s, l, m, N; backend=selected_backend)
@@ -501,7 +602,7 @@ function Teukolsky_lambda_const(c, s::Int, l::Int, m::Int, N::Int=-1)
             return Teukolsky_lambda_const(real(c), s, l, m, N)
         return continue_angular_mode(
             s, l, m, c;
-            truncation_order=_complex_truncation_order(s, l, m, N)).lambda
+            truncation_order=_complex_truncation_order(s, l, m, N, c)).lambda
     end
     angular_sep_const(c, s, l, m, N) + c^2 - 2*m*c
 end
