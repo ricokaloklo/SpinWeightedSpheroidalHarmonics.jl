@@ -380,8 +380,14 @@ end
         @test !isapprox(seeded.lambda, spin_weighted_spheroidal_eigenvalue(-2, 3, 2, c); rtol=1e-12)
         # Here even the eigenvalue cannot separate them, and the message says so
         @test occursin("cannot be identified", message(-30.0))
-        # Known issue: unseeded, Leaver's march in c lands on the neighbouring l = 3 mode
-        @test_broken spin_weighted_spheroidal_eigenvalue(-2, 2, 2, big(-14.0); method="leaver") ≈
-            spin_weighted_spheroidal_eigenvalue(-2, 2, 2, -14.0) rtol=1e-12
+        #=
+        Unseeded, Leaver's march in c used to land on the neighbouring l = 3 mode here
+        (from c ≈ -10.5 on), in any precision. It now checks that the eigenfunction stays
+        the same from step to step, and shortens the step when it does not.
+        =#
+        c = -12.0
+        marched = spin_weighted_spheroidal_eigenvalue(-2, 2, 2, big(c); method="leaver")
+        @test marched ≈ spin_weighted_spheroidal_eigenvalue(-2, 2, 2, c) rtol=1e-14
+        @test !isapprox(marched, spin_weighted_spheroidal_eigenvalue(-2, 3, 2, c); rtol=1e-12)
     end
 end

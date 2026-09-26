@@ -195,6 +195,86 @@ end
 # this keeps a comfortable margin on top of what is actually needed
 _leaver_default_cf_depth(n::Int, c) = max(200, 20 * n + 50 * ceil(Int, abs(c)))
 
+_LEAVER_MIN_OVERLAP = 0.9 # Smallest overlap between the eigenfunctions of consecutive march steps for a step to be accepted
+_LEAVER_MAX_HALVINGS = 12 # A march step may shrink to 2^-12 of the nominal step before the march gives up
+_LEAVER_MARCH_BUDGET = 10 # The march gives up after this many solves per nominal step (plus a fixed 100)
+const _LEAVER_PROFILE_THETA = range(0.02, π - 0.02, length=48)
+
+# where is the c the solve failed at, which during the march in c can differ from the target c
+_leaver_nonconvergence_message(s, l, m, c, n; where=c) = "Leaver continued-fraction solve did not converge for (s, l, m) = ($s, $l, $m), c = $where, branch n = $n. Try again with c in a wider floating-point precision, e.g. big($c)."
+
+# The eigenfunction for λ, sampled on a θ grid (weighted by sqrt(sin θ)) and scaled to unit norm,
+# so that the modes found at two nearby c can be compared
+function _leaver_mode_profile(s::Int, m::Int, c, λ, n::Int)
+    coeffs = _leaver_converged_series_coefficients(s, m, c, λ, n)
+    sol = LeaverAngularSolution(c, λ, n, abs(m - s), abs(m + s), coeffs, nothing)
+    values = [_leaver_raw_theta_value(sol, θ) * sqrt(sin(θ)) for θ in _LEAVER_PROFILE_THETA]
+    return values ./ sqrt(sum(abs2, values))
+end
+
+#=
+March c from 0 to its target along a straight line, starting from the eigenvalue λ0 at c = 0.
+
+Following λ alone is not enough: once a neighbouring mode comes close, the extrapolated
+guess can lie nearer that mode's root, and Newton converges there, in any precision. So each
+step is also checked against the eigenfunction. Between nearby c the same mode changes very
+little, while a neighbouring mode is a different function (for real c, an orthogonal one).
+A step that fails either check is halved, and steps grow back once the march is past the
+difficulty. Where the neighbour is so close that only tiny steps would stay on the mode,
+the march gives up rather than grinding on: both the smallest step and the total number of
+solves are limited. Return the eigenvalue and the continued-fraction mismatch at the target.
+=#
+function _leaver_march(s::Int, l, m::Int, c, n::Int, λ0; depth, tolerance, max_iter, fd_eps)
+    nominal = iszero(c) ? 1.0 : min(1.0, _LEAVER_CONTINUATION_STEP / Float64(abs(c)))
+    smallest_step = nominal / 2^_LEAVER_MAX_HALVINGS
+    budget = _LEAVER_MARCH_BUDGET * ceil(Int, 1 / nominal) + 100
+    t_previous, λ_previous = 0.0, λ0
+    t, λ = 0.0, λ0
+    profile = _leaver_mode_profile(s, m, zero(c), λ0, n)
+    step = nominal
+    solves = 0
+    failure = :none
+    mismatch = x -> _leaver_mismatch(x, s, m, zero(c), n; depth=depth)
+    give_up() = failure == :newton ? error(_leaver_nonconvergence_message(s, l, m, c, n; where=c * t)) :
+        error("Leaver's continued fraction cannot follow the mode (s, l, m) = ($s, $l, $m) " *
+            "past c = $(c * t): it becomes nearly degenerate with a neighbouring mode, and the " *
+            "solve keeps converging onto that mode. Seed it with the spectral eigenvalue instead, " *
+            "lambda0 = spin_weighted_spheroidal_eigenvalue($s, $l, $m, $(isreal(c) ? Float64(real(c)) : ComplexF64(c))).")
+    while t < 1
+        solves += 1
+        solves > budget && give_up()
+        t_next = min(1.0, t + step)
+        c_next = c * t_next
+        # Linear extrapolation from the last two accepted points (the steps can differ in size)
+        guess = t == t_previous ? λ : λ + (λ - λ_previous) * ((t_next - t) / (t - t_previous))
+        f = x -> _leaver_mismatch(x, s, m, c_next, n; depth=depth)
+        λ_next, converged = _leaver_newton(f, guess; tol=tolerance, max_iter=max_iter, fd_eps=fd_eps)
+        next_profile = nothing
+        if !converged
+            failure = :newton
+        else
+            next_profile = try
+                _leaver_mode_profile(s, m, c_next, λ_next, n)
+            catch
+                nothing # λ_next is not an eigenvalue that gives a normalizable solution
+            end
+            if next_profile === nothing || abs(sum(conj.(profile) .* next_profile)) < _LEAVER_MIN_OVERLAP
+                failure = :mode
+                next_profile = nothing
+            end
+        end
+        if next_profile !== nothing
+            t_previous, λ_previous = t, λ
+            t, λ, profile, mismatch = t_next, λ_next, next_profile, f
+            step = min(2step, nominal)
+        else
+            step /= 2
+            step < smallest_step && give_up()
+        end
+    end
+    return λ, mismatch
+end
+
 @doc raw"""
     _leaver_eigenvalue(s::Int, l, m::Int, c; branch_n=nothing, lambda0=nothing, cf_depth::Int=-1, tol=-1, max_iter::Int=80)
 
@@ -218,25 +298,20 @@ function _leaver_eigenvalue(s::Int, l, m::Int, c;
     tolerance = tol == -1 ? 1000 * working_eps : tol
     fd_eps = cbrt(working_eps)
 
-    λ = isnothing(lambda0) ? l * (l + 1) - s * (s + 1) : lambda0
-
     #=
     Newton's method only converges locally, and the eigenvalue drifts by more
     than the spacing between neighboring branches once |c| grows to order unity,
     so a solve started from the c = 0 guess happily converges onto the wrong
     branch. Unless the user supplies their own guess, we therefore march c from
-    0 (where the guess above is exact for integer l) to its target value in
-    small steps, extrapolating linearly from the two previous eigenvalues.
+    0 (where l(l+1) - s(s+1) is exact for integer l) to its target value.
     =#
-    nsteps = isnothing(lambda0) ? max(1, ceil(Int, abs(c) / _LEAVER_CONTINUATION_STEP)) : 1
-    λ_previous = λ
-    local mismatch
-    for k in 1:nsteps
-        ck = c * (k / nsteps)
-        mismatch = x -> _leaver_mismatch(x, s, m, ck, n; depth=depth)
-        λ_solved, converged = _leaver_newton(mismatch, 2 * λ - λ_previous; tol=tolerance, max_iter=max_iter, fd_eps=fd_eps)
-        converged || error("Leaver continued-fraction solve did not converge for (s, l, m) = ($s, $l, $m), c = $ck, branch n = $n. Try again with c in a wider floating-point precision, e.g. big($c).")
-        λ_previous, λ = λ, λ_solved
+    if isnothing(lambda0)
+        λ, mismatch = _leaver_march(s, l, m, c, n, l * (l + 1) - s * (s + 1);
+            depth=depth, tolerance=tolerance, max_iter=max_iter, fd_eps=fd_eps)
+    else
+        mismatch = x -> _leaver_mismatch(x, s, m, c, n; depth=depth)
+        λ, converged = _leaver_newton(mismatch, lambda0; tol=tolerance, max_iter=max_iter, fd_eps=fd_eps)
+        converged || error(_leaver_nonconvergence_message(s, l, m, c, n))
     end
 
     uncertainty = _leaver_root_uncertainty(mismatch, λ, working_eps)
