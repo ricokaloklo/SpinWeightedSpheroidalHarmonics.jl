@@ -339,34 +339,26 @@ end
         @test given(1.1, 0.4) ≈ spin_weighted_spheroidal_harmonic(s, l, m, c; method="leaver")(1.1, 0.4) rtol=1e-8 atol=1e-10
     end
 
-    @testset "Leaver accepts a non-integer harmonic index" begin
-        # l is only restricted to an integer by the spectral decomposition.
-        @test spin_weighted_spheroidal_harmonic(-2, 3.0 + 0.1im, 2, 0.28; branch_n=1).method == :leaver
-        @test spin_weighted_spheroidal_harmonic(-2, 3.5, 2, 0.28; branch_n=1).method == :leaver
-        @test spin_weighted_spheroidal_harmonic(-2, 3, 2, 0.28; method="LeAvEr").method == :leaver
-
-        value = spin_weighted_spheroidal_harmonic(-2, 3.0 + 0.1im, 2, 0.28; branch_n=1)(1.1, 0.4)
-        @test isfinite(real(value))
-        @test isfinite(imag(value))
-
-        λ = spin_weighted_spheroidal_eigenvalue(-2, 3.0 + 0.1im, 2, 0.28; branch_n=1)
-        @test isfinite(real(λ))
-        @test isfinite(imag(λ))
-
+    @testset "The harmonic index must be an integer mode" begin
         #=
-        The continued fraction has a discrete spectrum, so a non-integer l does
-        not give a new eigenvalue: it only moves the initial guess, which here
-        lands on the neighboring l = 4 mode. Every inversion of the continued
-        fraction shares the same roots, so branch_n does not override that.
+        Every method needs an integer l >= max(|s|, |m|). Leaver's continued fraction
+        used to accept a non-integer l, but silently returned the nearest integer mode:
+        its spectrum is discrete. Non-integer (complex) degree needs its own solver.
         =#
-        @test spin_weighted_spheroidal_eigenvalue(-2, 3.7, 2, 0.28; branch_n=1) ≈
-              spin_weighted_spheroidal_eigenvalue(-2, 4, 2, 0.28) rtol=1e-9 atol=1e-10
-        # Starting the solver elsewhere is what picks out another branch.
-        @test spin_weighted_spheroidal_eigenvalue(-2, 3.7, 2, 0.28; branch_n=1, lambda0=8.5) ≈
+        for method in ("auto", "direct", "jacobi", "chebyshev", "leaver"),
+                l in (3.5, 3.0 + 0.1im, 3.0)
+            @test_throws ArgumentError spin_weighted_spheroidal_harmonic(-2, l, 2, 0.28; method)
+            @test_throws ArgumentError spin_weighted_spheroidal_eigenvalue(-2, l, 2, 0.28; method)
+        end
+        # Below the lowest mode there is nothing to compute, whatever the method
+        for method in ("auto", "leaver")
+            @test_throws ArgumentError spin_weighted_spheroidal_harmonic(-2, 1, 2, 0.28; method)
+            @test_throws ArgumentError spin_weighted_spheroidal_eigenvalue(-2, 1, 2, 0.28; method)
+        end
+        # Integer l still works for every method, and method names stay case-insensitive
+        @test spin_weighted_spheroidal_harmonic(-2, 3, 2, 0.28; method="LeAvEr").method == :leaver
+        @test spin_weighted_spheroidal_eigenvalue(-2, 3, 2, 0.28; method="leaver") ≈
               spin_weighted_spheroidal_eigenvalue(-2, 3, 2, 0.28) rtol=1e-9 atol=1e-10
-
-        @test_throws ErrorException spin_weighted_spheroidal_harmonic(-2, 3.5, 2, 0.28; method="jacobi")
-        @test_throws ErrorException spin_weighted_spheroidal_eigenvalue(-2, 3.5, 2, 0.28; method="chebyshev")
         @test_throws ErrorException spin_weighted_spherical_harmonic(-2, 3, 2; method="leaver")
     end
 end

@@ -199,8 +199,6 @@ _leaver_default_cf_depth(n::Int, c) = max(200, 20 * n + 50 * ceil(Int, abs(c)))
     _leaver_eigenvalue(s::Int, l, m::Int, c; branch_n=nothing, lambda0=nothing, cf_depth::Int=-1, tol=-1, max_iter::Int=80)
 
 Compute the spin-weighted spheroidal eigenvalue λ with Leaver's continued fraction.
-`l` may be any number, including a non-integer or complex one, but only selects
-which root is found through the initial guess it provides.
 """
 function _leaver_eigenvalue(s::Int, l, m::Int, c;
     branch_n::Union{Nothing,Int}=nothing,

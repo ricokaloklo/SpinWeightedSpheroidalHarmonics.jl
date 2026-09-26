@@ -40,7 +40,7 @@ end
 
 struct SpectralDecompositionInputParams
     s::Int
-    l # Not restricted to an Int: the leaver method accepts any (even complex) harmonic index
+    l # Not restricted to an Int, so that a future solver for non-integer degree can use it
     m::Int
     c
     N::Int
@@ -110,19 +110,18 @@ function _spheroidal_boundary_values(coefficients_params, coefficients)
 end
 
 #=
-The spectral decomposition needs an integer harmonic index, while the leaver
-method does not. Resolve "auto" accordingly and reject the combinations that
-cannot work.
+Every method implemented here needs an integer harmonic index l >= max(|s|, |m|).
+A non-integer (complex) degree needs a dedicated solver, which is planned; until
+then it is rejected rather than silently rounded to the nearest integer mode.
 =#
-function _resolve_spheroidal_method(method, l)
+function _resolve_spheroidal_method(method, s::Int, l, m::Int)
     method = _format_method_name(method)
-    if !(l isa Integer)
-        if method == "auto"
-            return "leaver"
-        elseif method != "leaver"
-            error("A non-integer harmonic index l=$l is only supported by method=\"leaver\", not by method=\"$method\".")
-        end
-    end
+    l isa Integer || throw(ArgumentError(
+        "The harmonic index l must be an integer, got l = $l. " *
+        "A solver for non-integer (complex) degree is planned but not available yet."))
+    lmin = max(abs(s), abs(m))
+    l >= lmin || throw(ArgumentError(
+        "l = $l is below the lowest mode l = max(|s|, |m|) = $lmin for s = $s, m = $m."))
     return method
 end
 
@@ -135,7 +134,7 @@ spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity `c` 
 Return a SpinWeightedSpheroidalHarmonicFunction object that can be evaluated at any point.
 
 The `method` argument controls how the harmonic is computed:
-- `"auto"`: spectral decomposition with automatic spherical-harmonic backend selection when `l` is an integer, and `"leaver"` otherwise,
+- `"auto"`: spectral decomposition with automatic selection of the spherical-harmonic evaluation,
 - `"direct"` or `"jacobi"`: spectral decomposition with that spherical-harmonic backend,
 - `"chebyshev"`: solve the spheroidal ODE directly with Chebyshev pseudo-spectral collocation,
 - `"leaver"`: Leaver's continued-fraction method.
@@ -145,15 +144,12 @@ For the spectral decomposition, `N` is the number of spin-weighted *spherical* h
 while for `"leaver"` it is the number of terms kept in the power series. In either case the
 default value `N=-1` indicates that a suitable value of `N` will be determined automatically.
 
-Only `"leaver"` accepts a harmonic index `l` that is not an integer, including a complex one.
-Beware that the continued fraction still has a discrete spectrum, so a non-integer `l` does not
-by itself produce a new eigenvalue: `l` enters only through the initial guess
-$l(l+1) - s(s+1)$ that the solver is continued from at `c = 0`, and a non-integer `l` therefore
-returns whichever neighboring integer mode that guess falls closest to. For analytic continuation,
-supply the eigenvalue with `lambda`, or start the solver away from that guess with `lambda0`.
+For every method, the harmonic index `l` must be an integer with `l ≥ max(|s|, |m|)`. A solver for
+non-integer (complex) degree is planned.
 
-The remaining keyword arguments are specific to `"leaver"` as well. `branch_n` (counted from `0`
-for the lowest mode `l = max(|s|, |m|)`, and by default `l` rounded to the nearest mode) chooses
+The remaining keyword arguments are specific to `"leaver"`. `lambda` supplies the eigenvalue
+instead of solving for it, and `lambda0` starts the solver from another initial guess. `branch_n` (counted from `0`
+for the lowest mode `l = max(|s|, |m|)`, and by default the mode `l` itself) chooses
 which inversion of the continued fraction is used; all of them have the same roots, but the
 inversion belonging to the mode is the best conditioned one. `cf_depth` sets the depth at which
 the continued fraction is truncated, and `tol` and `max_iter` control its Newton iteration; both
@@ -161,8 +157,7 @@ the continued fraction is truncated, and `tol` and `max_iter` control its Newton
 floating-point precision of `c`.
 
 Note that `"leaver"` fixes the overall phase by making the overlap with ${}_s Y_{lm}$ real and
-positive, matching the convention of the spectral decomposition. This is impossible for a
-non-integer `l`, where the phase convention is instead that of a unit leading series coefficient.
+positive, matching the convention of the spectral decomposition.
 
 Two things limit `"leaver"` in a given floating-point precision, and it raises an error rather
 than return a result it cannot resolve in either case. Roundoff in the continued fraction limits
@@ -191,7 +186,7 @@ function spin_weighted_spheroidal_harmonic(s::Int, l, m::Int, c;
         branch_n::Union{Nothing, Int}=nothing, lambda=nothing, lambda0=nothing,
         cf_depth::Int=-1, tol=-1, max_iter::Int=80)
 
-    method = _resolve_spheroidal_method(method, l)
+    method = _resolve_spheroidal_method(method, s, l, m)
 
     if method == "leaver"
         _spectral_backend(backend) == :auto || throw(ArgumentError(
@@ -317,11 +312,10 @@ with spin weight `s`, harmonic index `l`, azimuthal index `m`, and spheroidicity
 The optional argument `N` specifies the number of terms to use in the spectral decomposition.
 The default value is `N=-1`, which indicates that a suitable value of `N` will be determined automatically.
 
-With `method="leaver"`, the eigenvalue is instead obtained from Leaver's continued fraction,
-which does not require the harmonic index `l` to be an integer. See
+With `method="leaver"`, the eigenvalue is instead obtained from Leaver's continued fraction. See
 [`spin_weighted_spheroidal_harmonic`](@ref) for the meaning of `branch_n`, `lambda0`, `cf_depth`,
-`tol` and `max_iter`, which are all specific to that method. When `l` is not an integer,
-`method="auto"` selects `"leaver"`; otherwise it selects the spectral decomposition.
+`tol` and `max_iter`, which are all specific to that method. `method="auto"` selects the spectral
+decomposition. For every method, `l` must be an integer with `l ≥ max(|s|, |m|)`.
 
 For the spectral decomposition this function is simply a wrapper to `Teukolsky_lambda_const`
 for backward compatibility.
@@ -329,7 +323,7 @@ for backward compatibility.
 function spin_weighted_spheroidal_eigenvalue(s::Int, l, m::Int, c; N::Int=-1, method="auto",
     branch_n::Union{Nothing, Int}=nothing, lambda0=nothing, cf_depth::Int=-1, tol=-1, max_iter::Int=80)
 
-    if _resolve_spheroidal_method(method, l) == "leaver"
+    if _resolve_spheroidal_method(method, s, l, m) == "leaver"
         return _leaver_eigenvalue(s, l, m, c; branch_n=branch_n, lambda0=lambda0, cf_depth=cf_depth, tol=tol, max_iter=max_iter)
     end
 
