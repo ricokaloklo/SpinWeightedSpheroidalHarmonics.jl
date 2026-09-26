@@ -845,12 +845,29 @@ function spin_weighted_spheroidal_harmonic(
     method="auto",
 )
     formatted_method = _format_method_name(method)
-    formatted_method == "chebyshev" && throw(ArgumentError(
-        "continued complex angular eigenpairs require a spectral harmonic backend."))
+    # Leaver's method finds its own eigenpair, so it has no use for this one
+    formatted_method == "leaver" && throw(ArgumentError(
+        "A continued eigenpair is evaluated from its spherical-harmonic coefficients, so " *
+        "method must be \"auto\", \"direct\", \"jacobi\" or \"chebyshev\" here. For Leaver's " *
+        "method, call spin_weighted_spheroidal_harmonic(s, l, m, c; method=\"leaver\")."))
     coefficients_params = SpectralDecompositionInputParams(
         pair.s, pair.l, pair.m, pair.c, pair.matrix_size)
     l_list = construct_all_l_in_matrix(
         pair.s, pair.m, pair.matrix_size)
+    normalization = one(real(eltype(pair.coefficients)))
+    if formatted_method == "chebyshev"
+        # The eigenpair supplies lambda, and through its coefficients the boundary values
+        S0, Spi2, Spi = _spheroidal_boundary_values(
+            coefficients_params, pair.coefficients)
+        chebyshev_solution = Fun(_solve_spheroidal_harmonic_chebyshev(
+            pair.s, pair.m, pair.c, pair.lambda, S0, Spi2, Spi), 0..π)
+        spherical_harmonics_l = Vector{Union{
+            SpinWeightedSphericalHarmonicFunction, Nothing}}(
+            nothing, length(l_list))
+        return SpinWeightedSpheroidalHarmonicFunction(
+            coefficients_params, pair.coefficients, spherical_harmonics_l,
+            normalization, pair.lambda, :chebyshev, chebyshev_solution)
+    end
     spherical_harmonics_l = [
         abs(pair.coefficients[index]) >= _TOLERANCE ?
         spin_weighted_spherical_harmonic(
@@ -859,7 +876,7 @@ function spin_weighted_spheroidal_harmonic(
     ]
     return SpinWeightedSpheroidalHarmonicFunction(
         coefficients_params, pair.coefficients, spherical_harmonics_l,
-        one(real(eltype(pair.coefficients))), pair.lambda, :spectral, nothing)
+        normalization, pair.lambda, :spectral, nothing)
 end
 
 function angular_observables(

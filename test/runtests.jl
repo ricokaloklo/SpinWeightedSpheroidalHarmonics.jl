@@ -390,4 +390,23 @@ end
         @test marched ≈ spin_weighted_spheroidal_eigenvalue(-2, 2, 2, c) rtol=1e-14
         @test !isapprox(marched, spin_weighted_spheroidal_eigenvalue(-2, 3, 2, c); rtol=1e-12)
     end
+
+    @testset "Methods for a continued eigenpair" begin
+        # Complex c goes through a continued eigenpair, which now supports "chebyshev"
+        for (s, l, m, c) in ((-2, 3, 2, 0.25 - 0.15im), (-2, 2, 2, 1.0 - 4.0im))
+            spectral = spin_weighted_spheroidal_harmonic(s, l, m, c)
+            chebyshev = spin_weighted_spheroidal_harmonic(s, l, m, c; method="chebyshev")
+            @test chebyshev.method == :chebyshev
+            @test chebyshev.lambda == spectral.lambda
+            for theta in (0.3, 1.1, 2.5), order in (0, 1)
+                @test chebyshev(theta, 0.4; theta_derivative=order) ≈
+                    spectral(theta, 0.4; theta_derivative=order) rtol=1e-12
+            end
+        end
+        pair = last(track_angular_mode(-2, 3, 2, [0.25 - 0.15im]).states)
+        @test spin_weighted_spheroidal_harmonic(pair; method="chebyshev")(1.1, 0.4) ≈
+            spin_weighted_spheroidal_harmonic(pair)(1.1, 0.4) rtol=1e-12
+        # Leaver's method finds its own eigenpair, and says so instead of failing further in
+        @test_throws ArgumentError spin_weighted_spheroidal_harmonic(pair; method="leaver")
+    end
 end
