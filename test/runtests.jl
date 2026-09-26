@@ -361,4 +361,27 @@ end
               spin_weighted_spheroidal_eigenvalue(-2, 3, 2, 0.28) rtol=1e-9 atol=1e-10
         @test_throws ErrorException spin_weighted_spherical_harmonic(-2, 3, 2; method="leaver")
     end
+
+    @testset "Advice for an unresolvable eigenvector" begin
+        message(c) = try
+            spin_weighted_spheroidal_harmonic(-2, 2, 2, c); ""
+        catch e
+            sprint(showerror, e)
+        end
+        # The Float64 eigenvalue still separates the pair: the message gives a seeded
+        # Leaver recipe, and that recipe returns the right mode in a wider precision
+        c = -16.0
+        @test occursin("lambda0=big(spin_weighted_spheroidal_eigenvalue(", message(c))
+        exact = spin_weighted_spheroidal_eigenvalue(-2, 2, 2, c)
+        seeded = spin_weighted_spheroidal_harmonic(-2, 2, 2, big(c); method="leaver",
+            lambda0=big(exact))
+        @test seeded.lambda ≈ exact rtol=1e-14
+        # ...and not its neighbour, which lies only 4e-10 away (relative)
+        @test !isapprox(seeded.lambda, spin_weighted_spheroidal_eigenvalue(-2, 3, 2, c); rtol=1e-12)
+        # Here even the eigenvalue cannot separate them, and the message says so
+        @test occursin("cannot be identified", message(-30.0))
+        # Known issue: unseeded, Leaver's march in c lands on the neighbouring l = 3 mode
+        @test_broken spin_weighted_spheroidal_eigenvalue(-2, 2, 2, big(-14.0); method="leaver") ≈
+            spin_weighted_spheroidal_eigenvalue(-2, 2, 2, -14.0) rtol=1e-12
+    end
 end
