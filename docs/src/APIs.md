@@ -68,10 +68,10 @@ of a spin-weighted spheroidal harmonic
 | field |   |
 | :--- | :--- |
 | `s` | spin weight $s$ |
-| `l` | harmonic index $\ell$ |
+| `l` | harmonic index $\ell$ (not restricted to an integer when using the `leaver` method) |
 | `m` | azimuthal index $m$ |
 | `c` | spheroidicity ($c = a\omega$ in the context of BHPT) |
-| `N` | number of terms to use in the spectral decomposition |
+| `N` | number of terms to use in the spectral decomposition (or in the power series, for the `leaver` method) |
 
 #### SpinWeightedSpheroidalHarmonicFunction
 This is a composite struct type that stores the output from [`spin_weighted_spheroidal_harmonic`](@ref)
@@ -84,11 +84,13 @@ This is a composite struct type that stores the output from [`spin_weighted_sphe
 | field |   |
 | :--- | :--- |
 | `params` | a [SpectralDecompositionInputParams](@ref) object storing the input parameters for the spectral decomposition |
-| `coeffs` | spectral decomposition coefficients |
-| `spherical_harmonics_l` | an array of [SpinWeightedSphericalHarmonicFunction](@ref) used in the spectral decomposition |
+| `coeffs` | spectral decomposition coefficients (or the coefficients $a_n$ of Leaver's power series, for the `leaver` method) |
+| `spherical_harmonics_l` | an array of [SpinWeightedSphericalHarmonicFunction](@ref) used in the spectral decomposition (empty for the `leaver` method) |
 | `normalization_const` | normalization constant to be *divided* to ensure the normalization convention is satisfied |
 | `method` | the method used to solve for the harmonic |
 | `lambda` | spin-weighted spheroidal eigenvalue $\lambda$ |
+| `chebyshev_solution` | numerical solution expressed in Chebyshev polynomials, when solved with the `chebyshev` method |
+| `leaver_solution` | Leaver's power-series solution, when solved with the `leaver` method |
 
 #### SpinWeightedSphericalHarmonicFunction
 This is a composite struct type that stores information about a spin-weighted spherical harmonic
