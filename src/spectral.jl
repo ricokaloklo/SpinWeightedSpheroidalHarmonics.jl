@@ -31,13 +31,26 @@ cannot be resolved in Float64 even though the eigenvalue still can.
 =#
 const SWSH_EIGENVECTOR_GAP_TOL = eps(Float64) / sqrt(2 * SWSH_EIGENVECTOR_OVERLAP_TOL)
 
-# TODO: once Leaver's method is merged, point users to it with a wider precision, e.g. big(c)
+#=
+The eigenvalue is accurate to about eps*||M||, so while the gap (relative to ||M||) is
+comfortably larger than that, the Float64 eigenvalue still tells the two modes apart.
+It can then seed Leaver's method, which resolves the harmonic in a wider precision.
+Unseeded, Leaver's march in c can land on the neighbouring mode here, in any precision.
+=#
 function _unresolvable_eigenvector_message(s, l, m, c, relative_gap)
-    return "The SWSH eigenvector for (s, l, m) = ($s, $l, $m), c = $c cannot be " *
+    message = "The SWSH eigenvector for (s, l, m) = ($s, $l, $m), c = $c cannot be " *
         "resolved in Float64: the mode is nearly degenerate with a neighbouring mode " *
         "(relative gap $relative_gap, below $SWSH_EIGENVECTOR_GAP_TOL), so the " *
-        "harmonic would be an arbitrary mix of the two. The eigenvalue is still " *
-        "accurate, see spin_weighted_spheroidal_eigenvalue."
+        "harmonic would be an arbitrary mix of the two. "
+    if relative_gap > 10eps(Float64)
+        return message * "The eigenvalue is still accurate, see " *
+            "spin_weighted_spheroidal_eigenvalue. To get the harmonic, refine it in a wider " *
+            "precision with Leaver's method, seeded with that eigenvalue: " *
+            "spin_weighted_spheroidal_harmonic($s, $l, $m, big($c); method=\"leaver\", " *
+            "lambda0=big(spin_weighted_spheroidal_eigenvalue($s, $l, $m, $c)))."
+    end
+    return message * "Here even the eigenvalue cannot tell the two modes apart in " *
+        "Float64, so the mode cannot be identified without a wider precision throughout."
 end
 
 function _determine_matrix_size_N(s::Int, l::Int, m::Int, c=0)
