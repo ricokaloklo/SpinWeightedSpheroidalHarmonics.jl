@@ -27,7 +27,7 @@ that return the exact harmonic and eigenvalue respectively.
 
 Exact partial derivatives (with respect to either $\theta$ and/or $\phi$) can be evaluated by specifying the derivative order with `theta_derivative` and `phi_derivative` respectively when calling the functions for a harmonic.
 
-Besides the spectral decomposition, both `spin_weighted_spheroidal_harmonic` and `spin_weighted_spheroidal_eigenvalue` also accept `method="leaver"`, which uses [Leaver's continued-fraction method](https://doi.org/10.1098/rspa.1985.0119) instead. Unlike the spectral decomposition, it does not require the harmonic index $\ell$ to be an integer.
+Besides the spectral decomposition, both `spin_weighted_spheroidal_harmonic` and `spin_weighted_spheroidal_eigenvalue` also accept `method="leaver"`, which uses [Leaver's continued-fraction method](https://doi.org/10.1098/rspa.1985.0119) instead. It also works in extended precision (e.g. `big(c)`), which helps at large $|c|$.
 
 ## Installation
 To install the package using the Julia package manager, simply type the following in the Julia REPL:

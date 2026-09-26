@@ -15,12 +15,9 @@ which admits a minimal (i.e. normalizable) solution only for the eigenvalues λ.
 Those are therefore the roots of a continued fraction, which we invert with a
 damped Newton iteration.
 
-In contrast to the spectral decomposition, nothing here requires the harmonic
-index `l` to be an integer: `l` enters only through the branch index of the
-continued fraction and through the initial guess for λ. Note however that the
-continued fraction itself keeps a discrete spectrum, so a non-integer `l` does
-not by itself continue the eigenvalue; for that, λ has to be supplied (or the
-solver started) by hand.
+The harmonic index `l` enters only through the branch index of the continued
+fraction and through the initial guess for λ. The public API requires an integer
+`l` (see `_resolve_spheroidal_method`); a non-integer degree needs a dedicated solver.
 =#
 
 mutable struct LeaverAngularSolution

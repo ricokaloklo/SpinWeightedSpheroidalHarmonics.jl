@@ -68,7 +68,7 @@ of a spin-weighted spheroidal harmonic
 | field |   |
 | :--- | :--- |
 | `s` | spin weight $s$ |
-| `l` | harmonic index $\ell$ (not restricted to an integer when using the `leaver` method) |
+| `l` | harmonic index $\ell$, an integer with $\ell \geq \max(|s|, |m|)$ |
 | `m` | azimuthal index $m$ |
 | `c` | spheroidicity ($c = a\omega$ in the context of BHPT) |
 | `N` | number of terms to use in the spectral decomposition (or in the power series, for the `leaver` method) |
