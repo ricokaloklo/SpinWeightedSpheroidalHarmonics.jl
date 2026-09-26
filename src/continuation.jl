@@ -856,11 +856,12 @@ function spin_weighted_spheroidal_harmonic(
         pair.s, pair.m, pair.matrix_size)
     normalization = one(real(eltype(pair.coefficients)))
     if formatted_method == "chebyshev"
-        # The eigenpair supplies lambda, and through its coefficients the boundary values
-        S0, Spi2, Spi = _spheroidal_boundary_values(
+        # The eigenpair supplies lambda, and through its coefficients the values at the equator
+        S_half, dS_half = _spheroidal_equator_values(
             coefficients_params, pair.coefficients)
-        chebyshev_solution = Fun(_solve_spheroidal_harmonic_chebyshev(
-            pair.s, pair.m, pair.c, pair.lambda, S0, Spi2, Spi), 0..π)
+        angular_sep = pair.lambda - pair.c^2 + 2 * pair.m * pair.c
+        chebyshev_solution = _solve_spheroidal_harmonic_chebyshev(
+            pair.s, pair.l, pair.m, pair.c, angular_sep, S_half, dS_half)
         spherical_harmonics_l = Vector{Union{
             SpinWeightedSphericalHarmonicFunction, Nothing}}(
             nothing, length(l_list))

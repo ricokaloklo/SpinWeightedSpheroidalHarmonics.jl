@@ -409,4 +409,33 @@ end
         # Leaver's method finds its own eigenpair, and says so instead of failing further in
         @test_throws ArgumentError spin_weighted_spheroidal_harmonic(pair; method="leaver")
     end
+
+    @testset "Chebyshev solver" begin
+        #=
+        The Chebyshev solver used to fail in two ways. With m != ±s the harmonic vanishes at
+        both poles, so a node at the equator left only zero boundary data (error of order 1).
+        With m ± s odd the harmonic goes like a half-integer power of 1 ∓ cos(theta) at the
+        poles, which a Chebyshev series in cos(theta) resolves slowly (errors of ~1e-5).
+        =#
+        thetas = range(0.0, π, length=41)
+        for (s, l, m, c) in ((0, 4, 1, 2.0), (2, 3, -1, 1.0), (-2, 3, 0, 0.5 - 0.5im),
+                             (-2, 6, -4, 2.5), (1, 2, 0, 0.0))
+            spectral = spin_weighted_spheroidal_harmonic(s, l, m, c)
+            chebyshev = spin_weighted_spheroidal_harmonic(s, l, m, c; method="chebyshev")
+            scale = maximum(abs(spectral(theta, 0.0)) for theta in thetas)
+            # derivatives are only checked away from the poles, where they may be less accurate
+            for order in (0, 1), theta in (order == 0 ? thetas : thetas[2:end-1])
+                @test abs(chebyshev(theta, 0.4; theta_derivative=order) -
+                    spectral(theta, 0.4; theta_derivative=order)) <= 1e-11 * scale
+            end
+        end
+        for (s, l, m) in ((-2, 20, 1), (0, 3, 0), (1, 4, 2))
+            chebyshev = spin_weighted_spherical_harmonic(s, l, m; method="chebyshev")
+            # direct evaluation is itself only good to ~1e-10 at l = 20
+            reference = spin_weighted_spherical_harmonic(s, l, m; method="jacobi")
+            for theta in thetas
+                @test chebyshev(theta, 0.4) ≈ reference(theta, 0.4) atol=1e-10
+            end
+        end
+    end
 end

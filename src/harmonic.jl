@@ -71,44 +71,57 @@ function spin_weighted_spherical_harmonic_at_pi_over_2(s::Int, l::Int, m::Int)
     _swsh_prefactor(s, l, m)*float(sum([prefactor_sign(s,l,r)*_summation_term_prefactor(s,l,m,r)/two_to_the_pow_l for r in rmin:1:rmax]))
 end
 
-function _solve_spheroidal_harmonic_chebyshev(s::Int, m::Int, c, λ, S0, Spi2, Spi)
-    # Split the domain into two parts -- one from theta = π to π/2 and from π/2 to 0
-    # NOTE x=cos(theta), x = -1 when \theta is \pi and x = 1 when \theta is 0
+#=
+Chebyshev solve of the spheroidal ODE in x = cos(theta), split at the equator.
 
-    # Solve in the first domain
-    dom1 = -1..0
+Near the poles S behaves like (1 - x)^a (1 + x)^b with a = |m + s|/2 and b = |m - s|/2,
+which are half-integers when m ± s is odd, so we solve for the smooth F = S/((1 - x)^a (1 + x)^b)
+instead. F satisfies a Jacobi-type equation,
+    (1 - x^2) F'' + (2(b - a) - 2(a + b + 1) x) F' + R(x) F = 0,
+and on each half we impose regularity at the pole (the equation there, where the F'' term drops out)
+and one condition at the equator that fixes the scale. That condition weighs the value and the
+derivative together, so that it does not vanish when the harmonic has a node at the equator.
 
-    # Define the differential operator
-    x = Fun(dom1)
-    D = Derivative(dom1)
-    L = (1 - x^2) * (1 - x^2) * D^2 - 2 * x * (1 - x^2) * D + (((c * x)^2 - 2 * c * s * x + s + λ - c^2 + 2 * m * c) * (1 - x^2) - (m + s * x)^2)
+`S_half` and `dS_half` are S and dS/dtheta at theta = π/2; `A` is the angular separation constant.
+Return S(theta) as a Chebyshev series on [0, π].
+=#
+function _solve_spheroidal_harmonic_chebyshev(s::Int, l::Int, m::Int, c, A, S_half, dS_half)
+    a, b = abs(m + s) / 2, abs(m - s) / 2
+    lmin = max(abs(m), abs(s))
+    κ = l + 1 # typical size of d/dx, to weigh the value against the derivative
+    # F and dF/dx at the equator, where (1 - x)^a (1 + x)^b = 1 and dS/dx = -dS/dtheta
+    F0 = S_half
+    F1 = -dS_half - (b - a) * S_half
+    target = abs2(F0) + abs2(F1) / κ^2
 
-    rhs_zero = zero(S0 + Spi2 + Spi)
-    bvals = [Spi, Spi2] # Boundary values
-    u = [Dirichlet(dom1); L] \ [bvals, rhs_zero]
+    halves = map(((-1.0, 0.0), (0.0, 1.0))) do (lo, hi)
+        dom = Chebyshev(lo..hi)
+        x = Fun(dom)
+        D = Derivative(dom)
+        R = c^2 * x^2 - 2 * c * s * x + (A + s + s^2 - lmin * (lmin + 1))
+        L = (1 - x^2) * D^2 + (2 * (b - a) - 2 * (a + b + 1) * x) * D + R
+        E0 = Evaluation(dom, 0.0)
+        normalization = conj(F0) * E0 + (conj(F1) / κ^2) * (E0 * D)
+        pole = hi == 1.0 ? 1.0 : -1.0
+        Ep = Evaluation(dom, pole)
+        regularity = (2 * (b - a) - 2 * (a + b + 1) * pole) * (Ep * D) + R(pole) * Ep
+        [normalization; regularity; L] \ [target, zero(target), zero(target)]
+    end
 
-    # Solve in the second domain
-    dom2 = 0..1
-    x = Fun(dom2)
-    D = Derivative(dom2)
-    L = (1 - x^2) * (1 - x^2) * D^2 - 2 * x * (1 - x^2) * D + (((c * x)^2 - 2 * c * s * x + s + λ - c^2 + 2 * m * c) * (1 - x^2) - (m + s * x)^2)
-
-    bvals = [Spi2, S0] # Boundary values
-    v = [Dirichlet(dom2); L] \ [bvals, rhs_zero]
-
-    S(θ) = θ > π / 2 ? u(cos(θ)) : v(cos(θ))
-    return S
+    function S(θ)
+        x = cos(θ)
+        F = x < 0 ? halves[1](x) : halves[2](x)
+        return (1 - x)^a * (1 + x)^b * F
+    end
+    return Fun(S, 0..π)
 end
 
 function _solve_spherical_harmonic_chebyshev(s::Int, l::Int, m::Int)
-    # Evaluate sYlm(0,0) exactly
-    Y0 = m == -s ? (-1)^s * sqrt((2*l+1)/(4π)) : 0.0
     # Evaluate sYlm(\pi/2, 0) using a numerically stable method
     Ypi2 = Float64(spin_weighted_spherical_harmonic_at_pi_over_2(s, l, m))
-    # Evaluate sYlm(\pi,0) exactly
-    Ypi = m == s ? (-1)^l * sqrt((2*l+1)/(4π)) : 0.0
-
-    return _solve_spheroidal_harmonic_chebyshev(s, m, 0.0, spin_weighted_spherical_eigenvalue(s, l, m), Y0, Ypi2, Ypi)
+    dYpi2 = real(spin_weighted_spherical_harmonic(s, l, m)(π / 2, 0.0; theta_derivative=1))
+    A = spin_weighted_spherical_eigenvalue(s, l, m)
+    return _solve_spheroidal_harmonic_chebyshev(s, l, m, 0.0, A, Ypi2, dYpi2)
 end
 
 # Find the proper _theta in [0, π] and _phi to evaluate at, using the symmetry
@@ -133,11 +146,6 @@ function _nth_derivative_spheroidal_harmonic_chebyshev(chebyshev_S::Fun, m::Int,
     # Note that the derivatives at the two boundary points might be inaccurate
     S_deriv = theta_derivative == 0 ? chebyshev_S(_theta) : differentiate(chebyshev_S, theta_derivative)(_theta)
     return S_deriv * cis(m * _phi) * (m * 1im)^phi_derivative
-end
-
-function _nth_derivative_spheroidal_harmonic_chebyshev(chebyshev_S::Function, m::Int, theta_derivative::Int, phi_derivative::Int, theta, phi)
-    S_fun = Fun(chebyshev_S, 0..π)
-    return _nth_derivative_spheroidal_harmonic_chebyshev(S_fun, m, theta_derivative, phi_derivative, theta, phi)
 end
 
 function _jacobi_polynomial_recurrence(n::Int, α::Int, β::Int, x::Real)

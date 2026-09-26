@@ -82,14 +82,14 @@ function _unnormalized_spin_weighted_spheroidal_harmonic(coefficients_params, co
     return output
 end
 
-function _spheroidal_boundary_values(coefficients_params, coefficients)
+# S and dS/dtheta at theta = π/2, from the spectral decomposition
+function _spheroidal_equator_values(coefficients_params, coefficients)
     s = coefficients_params.s
     m = coefficients_params.m
     l_list = construct_all_l_in_matrix(s, m, coefficients_params.N)
 
-    S0 = zero(eltype(coefficients))
-    Spi2 = zero(eltype(coefficients))
-    Spi = zero(eltype(coefficients))
+    S_half = zero(eltype(coefficients))
+    dS_half = zero(eltype(coefficients))
 
     for idx in eachindex(l_list)
         if abs(coefficients[idx]) < _TOLERANCE
@@ -97,16 +97,15 @@ function _spheroidal_boundary_values(coefficients_params, coefficients)
         end
 
         l = l_list[idx]
-        Y0 = m == -s ? (-1)^s * sqrt((2 * l + 1) / (4π)) : 0.0
+        # Evaluate sYlm(\pi/2, 0) using a numerically stable method
         Ypi2 = Float64(spin_weighted_spherical_harmonic_at_pi_over_2(s, l, m))
-        Ypi = m == s ? (-1)^l * sqrt((2 * l + 1) / (4π)) : 0.0
+        dYpi2 = real(spin_weighted_spherical_harmonic(s, l, m)(π / 2, 0.0; theta_derivative=1))
 
-        S0 += coefficients[idx] * Y0
-        Spi2 += coefficients[idx] * Ypi2
-        Spi += coefficients[idx] * Ypi
+        S_half += coefficients[idx] * Ypi2
+        dS_half += coefficients[idx] * dYpi2
     end
 
-    return S0, Spi2, Spi
+    return S_half, dS_half
 end
 
 #=
@@ -224,8 +223,8 @@ function spin_weighted_spheroidal_harmonic(s::Int, l, m::Int, c;
 
     l_list = construct_all_l_in_matrix(coefficients_params.s, coefficients_params.m, coefficients_params.N)
     if method == "chebyshev"
-        S0, Spi2, Spi = _spheroidal_boundary_values(coefficients_params, coefficients)
-        chebyshev_solution = Fun(_solve_spheroidal_harmonic_chebyshev(s, m, c, lambda, S0, Spi2, Spi), 0..π)
+        S_half, dS_half = _spheroidal_equator_values(coefficients_params, coefficients)
+        chebyshev_solution = _solve_spheroidal_harmonic_chebyshev(s, l, m, c, angular_sep, S_half, dS_half)
         spherical_harmonics_l = Vector{Union{SpinWeightedSphericalHarmonicFunction, Nothing}}(undef, length(l_list))
         fill!(spherical_harmonics_l, nothing)
         return SpinWeightedSpheroidalHarmonicFunction(coefficients_params, coefficients, spherical_harmonics_l, normalization, lambda, :chebyshev, chebyshev_solution, nothing)
