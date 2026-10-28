@@ -19,6 +19,12 @@ In particular, we use the following normalization convention:
 ```
 identical to the convention used in the Mathematica package [SpinWeightedSpheroidalHarmonics](https://bhptoolkit.org/SpinWeightedSpheroidalHarmonics/) from the Black Hole Perturbation Toolkit.
 
+For complex spheroidicity the harmonic is normalized with its modulus,
+```math
+    \int_0^{\pi} \left| {}_{s} S_{\ell m}(\theta; c) \right|^{2} \sin(\theta) \, d\theta = \frac{1}{2\pi} \; ,
+```
+and every method fixes its overall phase by making the overlap with $`{}_{s} Y_{\ell m}`$ real and positive. This normalization is not an analytic function of $`c`$, because of the complex conjugate. With `normalization=:analytic` the harmonic is instead normalized as in the real case above, with the square and without the complex conjugate, as the Mathematica package does; it is then the analytic continuation of the harmonic for real $`c`$, which is what quasinormal-mode residues (complex $`c = a\omega`$) need. The eigenvalue is the same for both, and so is the harmonic for real $`c`$.
+
 Additionally, we provide two similar functions
 - `spin_weighted_spherical_harmonic` $`\,{}_{s} Y_{\ell m}(\theta, \phi)`$, and
 - `spin_weighted_spherical_eigenvalue`
@@ -72,9 +78,10 @@ swsh.spherical_harmonics_l, swsh.coeffs
 There are two backends implemented for spectral decomposition and it can be specified with the keyword argument `backend`, which can be either `:banded`, `:dense`, or `:auto` (the default).
 
 For real spheroidicity, the default `backend=:auto` chooses the `:banded` backend, which computes only the requested
-banded spectral eigenpair (eigenvalue + eigenvector). It adaptively increases the spherical-harmonic
-truncation until the eigenvalue drift, eigenvector overlap, coefficient tail,
-and angular-equation residual all pass. 
+banded spectral eigenpair (eigenvalue + eigenvector). It starts from a spherical-harmonic truncation estimated
+from $`|c|`$ and enlarges it until the neglected coefficients and the eigenpair residual are both below tolerance.
+`spin_weighted_spheroidal_eigenvalue` solves for the eigenvalue alone, which is accepted once it agrees between
+two successive truncations.
 
 The resulting coefficients are used
 directly for the harmonic and its exact angular derivatives, so a full dense
@@ -89,6 +96,24 @@ dense = spin_weighted_spheroidal_harmonic(
 banded(pi / 3, 0.0)
 banded(pi / 3, 0.0; theta_derivative=1)
 ```
+
+## Arbitrary precision and threads
+Every function computes in the floating-point type of its input: `Float64` by default, `BigFloat`
+at any precision for `BigFloat` input or with the keyword `precision`. A harmonic built in `BigFloat`
+evaluates at the precision it was built with. Harmonics, eigenvalues and continued modes can be
+computed and evaluated from several threads at once.
+
+```julia
+spin_weighted_spheroidal_eigenvalue(-2, 2, 2, 7//20; precision=256)   # 7/20 to 256 bits
+S = spin_weighted_spheroidal_harmonic(-2, 2, 2, 7//20; precision=256)
+S(big(11) / 10, 0)
+```
+
+## Examples
+The notebooks in [`examples`](examples) show the package at work: [`plot-SWSH.ipynb`](examples/plot-SWSH.ipynb) plots a
+harmonic and its derivatives, and [`arbitrary-precision.ipynb`](examples/arbitrary-precision.ipynb) covers `BigFloat`,
+complex frequencies, the accuracy of each method and the cost. The [documentation](http://ricokaloklo.github.io/SpinWeightedSpheroidalHarmonics.jl)
+has more examples and the full API.
 
 ## How to cite
 If you have used this code in your research that leads to a publication, please cite the following article:

@@ -13,6 +13,8 @@ In particular, we use the following normalization convention:
 ```
 identical to the convention used in the Mathematica package [SpinWeightedSpheroidalHarmonics](https://bhptoolkit.org/SpinWeightedSpheroidalHarmonics/) from the Black Hole Perturbation Toolkit.
 
+For complex spheroidicity the harmonic is normalized with its modulus, $\int_0^{\pi} |{}_{s} S_{\ell m}|^{2} \sin\theta \, d\theta = 1/(2\pi)$, and every method fixes its overall phase by making the overlap with ${}_{s} Y_{\ell m}$ real and positive. Because of the complex conjugate this normalization is not an analytic function of $c$. With `normalization=:analytic` the harmonic is instead normalized with $\int_0^{\pi} \left[{}_{s} S_{\ell m}\right]^{2} \sin\theta \, d\theta = 1/(2\pi)$, without the complex conjugate, as the Mathematica package does; it is then the analytic continuation of the harmonic for real $c$, which is what quasinormal-mode residues (complex $c = a\omega$) need. The eigenvalue is the same for both, and so is the harmonic for real $c$.
+
 Additionally, we provide two similar functions
 - `spin_weighted_spherical_harmonic` ${}_{s} Y_{\ell m}(\theta, \phi)$, and
 - `spin_weighted_spherical_eigenvalue`
